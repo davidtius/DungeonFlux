@@ -1,0 +1,83 @@
+using UnityEngine;
+using UnityEngine.Audio;
+
+public class FootstepSystem : MonoBehaviour
+{
+    [Header("Settings")]
+    public AudioClip[] stepSounds; // Masukkan beberapa variasi suara langkah (bisa 1 aja)
+    public float stepInterval = 0.35f; // Seberapa cepat bunyi langkahnya (detik)
+    [Range(0f, 1f)] public float volume = 0.3f; // Volume kecil saja
+
+    [Header("Spatial Settings (Khusus Musuh)")]
+    public bool is3D = false; // Centang ini untuk MUSUH, biarkan mati untuk PLAYER
+
+    [Header("Mixer Settings")]
+    public AudioMixerGroup sfxGroup;
+
+    private AudioSource audioSource;
+    private Rigidbody2D rb;
+    private float stepTimer;
+
+    void Start()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        
+        // Setup Audio Source
+        audioSource = gameObject.AddComponent<AudioSource>();
+
+        if (sfxGroup != null)
+        {
+            audioSource.outputAudioMixerGroup = sfxGroup;
+        }
+        
+        audioSource.playOnAwake = false;
+        audioSource.volume = volume;
+
+        if (is3D)
+        {
+            audioSource.spatialBlend = 1f; // 3D Sound (suara mengecil jika jauh)
+            audioSource.maxDistance = 10f; // Terdengar maksimal dari jarak 10 meter
+            audioSource.rolloffMode = AudioRolloffMode.Linear;
+        }
+        else
+        {
+            audioSource.spatialBlend = 0f; // 2D Sound (selalu terdengar jelas di telinga player)
+        }
+    }
+
+    void Update()
+    {
+        // Cek apakah karakter bergerak?
+        if (rb != null && rb.linearVelocity.magnitude > 0.1f)
+        {
+            stepTimer -= Time.deltaTime;
+
+            if (stepTimer <= 0)
+            {
+                PlayStep();
+                stepTimer = stepInterval; // Reset timer
+            }
+        }
+        else
+        {
+            // Reset timer agar langkah pertama langsung bunyi saat mulai jalan lagi
+            stepTimer = 0; 
+        }
+    }
+
+    void PlayStep()
+    {
+        if (stepSounds.Length == 0) return;
+
+        // Pilih suara acak
+        AudioClip clip = stepSounds[Random.Range(0, stepSounds.Length)];
+        
+        // Variasi Pitch (biar gak monoton/robot)
+        audioSource.pitch = Random.Range(0.9f, 1.1f);
+        
+        // Variasi Volume sedikit
+        audioSource.volume = volume * Random.Range(0.9f, 1.0f);
+
+        audioSource.PlayOneShot(clip);
+    }
+}

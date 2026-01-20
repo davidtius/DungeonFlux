@@ -1,0 +1,160 @@
+using UnityEngine;
+using TMPro; 
+
+public class TrapRoomController : MonoBehaviour
+{
+    public enum TrapType
+    {
+        None,
+        PoisonGas,  // Darah berkurang pelan-pelan (Decreasing Health)
+        TimeBomb    // Mati instan jika waktu habis (Time Attack)
+    }
+
+    [Header("Trap Settings")]
+    public TrapType trapType = TrapType.PoisonGas;
+    
+    [Header("Poison Gas Settings")]
+    public int poisonDamage = 1;
+    public float damageInterval = 1.5f; 
+
+    [Header("Time Bomb Settings")]
+    public float timeLimit = 30f;
+
+    // Referensi
+    private LockingRoomTrigger lockingScript;
+    private GameObject playerObj;
+    private float timer = 0f;
+    private float poisonTimer = 0f;
+    private bool trapActive = false;
+
+    // Visual Timer 
+    public TextMeshPro timerText; 
+
+    void Start()
+    {
+        lockingScript = GetComponent<LockingRoomTrigger>();
+        if (lockingScript == null)
+        {
+            Debug.LogError("TrapRoomController butuh LockingRoomTrigger di objek yang sama!");
+            Destroy(this);
+        }
+    }
+
+    void Update()
+    {
+        // Cek status dari LockingRoomTrigger
+        // Trap aktif HANYA jika Ruangan Terkunci DAN Belum Bersih
+        if (lockingScript.IsLocked && !lockingScript.IsCleared)
+        {
+            if (!trapActive)
+            {
+                // Trap baru saja aktif
+                trapActive = true;
+                StartTrap();
+            }
+            
+            // Jalankan Logika Trap
+            if (trapType == TrapType.PoisonGas)
+            {
+                RunPoisonLogic();
+            }
+            else if (trapType == TrapType.TimeBomb)
+            {
+                RunTimeBombLogic();
+            }
+        }
+        else
+        {
+            // Jika ruangan sudah terbuka, matikan trap
+            if (trapActive)
+            {
+                trapActive = false;
+                StopTrap();
+            }
+        }
+    }
+
+    void StartTrap()
+    {
+        // Cari player 
+        playerObj = GameObject.FindGameObjectWithTag("Player");
+        if (GameHUDManager.Instance != null)
+        {
+            GameHUDManager.Instance.StartTrapEffect(trapType);
+        }
+        if (trapType == TrapType.PoisonGas)
+        {
+            Debug.Log("<color=green>TRAP: Gas Beracun Aktif!</color>");
+            // (Opsional) Spawn partikel gas hijau
+        }
+        else if (trapType == TrapType.TimeBomb)
+        {
+            Debug.Log("<color=red>TRAP: Waktu Berjalan!</color>");
+            timer = timeLimit;
+        }
+    }
+
+    void StopTrap()
+    {
+        Debug.Log("Trap Nonaktif. Ruangan aman.");
+        if (timerText != null) timerText.text = ""; // Bersihkan teks
+        if (GameHUDManager.Instance != null)
+        {
+            GameHUDManager.Instance.StopTrapEffect();
+        }
+        // (Opsional) Matikan partikel gas
+    }
+
+    // --- LOGIKA POISON (Decreasing Health) ---
+    void RunPoisonLogic()
+    {
+        if (playerObj == null) return;
+
+        poisonTimer += Time.deltaTime;
+        
+        // Tampilkan efek visual (misal layar berkedip hijau) - Nanti saja
+        
+        if (poisonTimer >= damageInterval)
+        {
+            poisonTimer = 0f;
+            Health playerHealth = playerObj.GetComponent<Health>();
+            if (playerHealth != null)
+            {
+                playerHealth.TakeDamage(poisonDamage);
+                Debug.Log("Uhuk! Kena racun.");
+            }
+        }
+    }
+
+    // --- LOGIKA TIME BOMB (Time Attack) ---
+    void RunTimeBombLogic()
+    {
+        if (playerObj == null) return;
+
+        timer -= Time.deltaTime;
+
+        // Update UI Timer (jika ada)
+        if (timerText != null)
+        {
+            timerText.text = Mathf.CeilToInt(timer).ToString();
+            timerText.color = Color.red;
+        }
+
+        if (GameHUDManager.Instance != null)
+        {
+            GameHUDManager.Instance.UpdateTrapTimer(timer);
+        }
+
+        if (timer <= 0)
+        {
+            // WAKTU HABIS KILL PLAYER
+            Health playerHealth = playerObj.GetComponent<Health>();
+            if (playerHealth != null)
+            {
+                Debug.Log("BOOM! Waktu habis.");
+                // Berikan damage sebesar sisa nyawa (Mati Instan)
+                playerHealth.TakeDamage(9999); 
+            }
+        }
+    }
+}

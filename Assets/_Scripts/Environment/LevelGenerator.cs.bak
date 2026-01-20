@@ -1,0 +1,1684 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Tilemaps;
+using System.Linq;
+using Unity.Cinemachine;
+
+public class Leaf
+{
+    public RectInt rect;
+    public Leaf leftChild;
+    public Leaf rightChild;
+    public RectInt? room = null;
+
+    private readonly int MIN_LEAF_SIZE;
+
+    public Leaf(RectInt rect, int minLeafSize)
+    {
+        this.rect = rect;
+        this.MIN_LEAF_SIZE = minLeafSize;
+    }
+
+    public bool Split()
+    {
+        if (leftChild != null || rightChild != null) return false;
+
+        bool splitHorizontally = (Random.Range(0, 2) == 0);
+        if (rect.width > rect.height && (float)rect.width / rect.height >= 1.25f) splitHorizontally = false;
+        else if (rect.height > rect.width && (float)rect.height / rect.width >= 1.25f) splitHorizontally = true;
+
+        int minSplit = MIN_LEAF_SIZE + 1;
+        int maxSplit = (splitHorizontally ? rect.height : rect.width) - MIN_LEAF_SIZE - 1;
+
+        if (minSplit >= maxSplit) return false;
+
+        int splitPoint = Random.Range(minSplit, maxSplit);
+
+        if (splitHorizontally)
+        {
+            leftChild = new Leaf(new RectInt(rect.x, rect.y, rect.width, splitPoint), MIN_LEAF_SIZE);
+            rightChild = new Leaf(new RectInt(rect.x, rect.y + splitPoint, rect.width, rect.height - splitPoint), MIN_LEAF_SIZE);
+        }
+        else
+        {
+            leftChild = new Leaf(new RectInt(rect.x, rect.y, splitPoint, rect.height), MIN_LEAF_SIZE);
+            rightChild = new Leaf(new RectInt(rect.x + splitPoint, rect.y, rect.width - splitPoint, rect.height), MIN_LEAF_SIZE);
+        }
+        return true;
+    }
+
+    public void CreateRooms(LevelGenerator levelGenerator)
+    {
+        if (leftChild != null || rightChild != null)
+        {
+            leftChild?.CreateRooms(levelGenerator);
+            rightChild?.CreateRooms(levelGenerator);
+
+            if (leftChild != null && rightChild != null)
+            {
+                // Dapatkan ruangan dari anak
+                RectInt? roomA = leftChild.GetRoom();
+                RectInt? roomB = rightChild.GetRoom();
+
+                if (roomA.HasValue && roomB.HasValue)
+                {
+                    // CEK TIPE SEBELUM MEMBUAT KORIDOR
+                    RoomType typeA = levelGenerator.GetRoomType(roomA.Value);
+                    RoomType typeB = levelGenerator.GetRoomType(roomB.Value);
+
+                    if (typeA != RoomType.Secret && typeB != RoomType.Secret)
+                    {
+                        levelGenerator.CreateCorridor(roomA, roomB);
+                    }
+                }
+            }
+        }
+        else
+        {
+            int roomWidth = Random.Range(rect.width / 2, rect.width - 1);
+            int roomHeight = Random.Range(rect.height / 2, rect.height - 1);
+            int roomX = rect.x + Random.Range(1, rect.width - roomWidth);
+            int roomY = rect.y + Random.Range(1, rect.height - roomHeight);
+            room = new RectInt(roomX, roomY, roomWidth, roomHeight);
+            levelGenerator.CarveRoom((RectInt)room);
+        }
+    }
+
+    public RectInt? GetRoom()
+    {
+        if (room != null) return room;
+        else
+        {
+            RectInt? leftRoom = leftChild?.GetRoom();
+            RectInt? rightRoom = rightChild?.GetRoom();
+            if (leftRoom == null && rightRoom == null) return null;
+            else if (rightRoom == null) return leftRoom;
+            else if (leftRoom == null) return rightRoom;
+            else return Random.Range(0, 2) == 0 ? leftRoom : rightRoom;
+        }
+    }
+}
+
+[System.Serializable] 
+public class BiomeTheme 
+{
+    public string biomeName;
+    public TileBase floorTile;      // Tile lantai biasa
+    public RuleTile wallBaseRuleTile; // Rule Tile untuk 'Walls' 
+    public DestructibleSpriteSet destructibleSprites;
+
+    [Header("Music")]
+    public AudioClip biomeBGM; 
+    public AudioClip bossBGM;
+}
+
+[System.Serializable]
+public struct DestructibleSpriteSet
+{
+    public Sprite up;
+    public Sprite down;
+    public Sprite left;
+    public Sprite right;
+
+    [Header("Default")]
+    public Sprite center; // Sprite solid/tengah
+}
+
+[System.Serializable]
+public struct PCGProfileSettings
+{
+    public PlayerProfile profile; // Key: Aggressive, Passive, dll.
+    
+    [Header("Map Dimensions")]
+    public int mapWidth;
+    public int mapHeight;
+
+    [Header("BSP Parameters (Layout Complexity)")]
+    public int minLeafSize;
+    public int maxLeafSize;
+    // (Nanti kita bisa tambahkan trapDensity, dll di sini)
+}
+
+public class LevelGenerator : MonoBehaviour
+{
+    [Header("Loot Table")]
+    public List<PlayerController.LootData> possibleLoot;
+    [Header("Object Reference")]
+    public GameObject playerPrefab;
+    public GameObject[] enemyPrefabs;
+    public Tilemap floorTilemap;
+    public Tilemap wallTilemap;
+    public BoxCollider2D cameraBoundsCollider; 
+    public CinemachineConfiner2D cinemachineConfiner;
+
+    [Header("Biome Settings")]
+    public List<BiomeTheme> biomeThemes;
+
+    [Header("Map Size")]
+    public int mapWidth = 80;
+    public int mapHeight = 60;
+
+    [Header("BSP/Room Settings")]
+    public int minLeafSize = 10;
+    public int maxLeafSize = 20;
+    public int corridorSize = 1;
+
+    [Header("DDA-PCG Parameters")]
+    public List<PCGProfileSettings> pcgProfiles;
+
+    [Header("Gameplay Settings")]
+    public int enemiesPerRoom = 2;
+    public int floorPerBiome = 5;
+    public GameObject[] bossPrefabs;
+
+    [Header("Room Type Probabilities")]
+    [Range(0f, 1f)] public float restStopChance = 0.15f;
+    [Range(0f, 1f)] public float combatRoomChance = 0.2f;
+    [Range(0f, 1f)] public float secretRoomChance = 0.1f;
+    [Range(0f, 1f)] public float trapRoomChance = 0.25f;
+
+    [Header("Room Specific Objects")]
+    public GameObject shrinePrefab;
+    public GameObject treasureChestPrefab;
+    public GameObject trapPrefab;
+    public GameObject destructibleWallPrefab;
+    public GameObject lockingWallPrefab;
+    public GameObject lockingRoomTriggerPrefab;
+
+    [Header("Game Loop / Pindah Floor")]
+    public GameObject exitPortalPrefab;
+    public GameObject sanctuaryPortalPrefab;
+
+    [Header("UI References")]
+    public LevelFader levelFader; 
+
+    [Header("Room Specific Objects")]
+    public GameObject roomVisitTriggerPrefab;
+
+    private GameObject playerInstance;
+    private List<GameObject> spawnedObjects = new List<GameObject>(); // Untuk hapus musuh & portal
+    private int currentFloor = 1;
+    private bool objectiveCompleted = false;
+
+    [HideInInspector] public int[,] mapGrid;
+    private List<RectInt> rooms = new List<RectInt>();
+    private Dictionary<RectInt, RoomType> roomTypes = new Dictionary<RectInt, RoomType>();
+    // Referensi ke RectInt ruangan spawn (bukan Leaf)
+    private RectInt playerSpawnRoom;
+    private RectInt exitSpawnRoom;
+    private BiomeTheme currentActiveTheme;
+    private List<int> currentBiomeOrder = new List<int>();
+
+    private PlayerProfile nextFloorProfile = PlayerProfile.Passive;
+
+    // Untuk menyimpan tile yg disembunyikan
+    private Dictionary<RectInt, List<(Vector3Int position, TileBase tile, bool isWall)>> hiddenTiles = new Dictionary<RectInt, List<(Vector3Int position, TileBase tile, bool isWall)>>();
+    [HideInInspector]
+    public HashSet<Vector2Int> secretFloorAndCorridorTiles = new HashSet<Vector2Int>();
+
+    // Untuk menyimpan objek yg disembunyikan
+    private Dictionary<RectInt, List<GameObject>> hiddenObjects = new Dictionary<RectInt, List<GameObject>>();
+
+    private Dictionary<PlayerProfile, Dictionary<string, float>> ddaWeightDatabase;
+
+    public static LevelGenerator Instance { get; private set; }
+
+    void Awake()
+    {
+        if (Instance == null) { Instance = this; }
+        else { Destroy(gameObject); }
+
+        SetupDDAWeights();
+    }
+
+    void Start()
+    {
+        if (DDAManager.Instance != null)
+        {
+            DDAManager.Instance.RegisterLevelGenerator(this);
+        }
+        else
+        {
+            Debug.LogWarning("DDAManager tidak ditemukan (Testing Mode?). Generate New Run Default.");
+            GenerateNewRun();
+        }
+    }
+
+    public BiomeTheme GetCurrentBiomeTheme()
+    {
+        return currentActiveTheme;
+    }
+
+    public void SetNextFloorProfile(PlayerProfile profile)
+    {
+        this.nextFloorProfile = profile;
+        Debug.Log($"<color=cyan>LevelGenerator:</color> Perintah Diterima. Lantai berikutnya akan di-generate untuk Player {profile}.");
+    }
+
+    public void GenerateNewRun()
+    {
+        currentFloor = 1;
+        GenerateLevel();
+    }
+
+    public void GenerateLevel()
+    {
+        // 1. Cari pengaturan yang sesuai dengan profil DDA
+        PCGProfileSettings settings = pcgProfiles.FirstOrDefault(p => p.profile == nextFloorProfile);
+        
+        // Fallback jika tidak ditemukan (seharusnya tidak terjadi jika Inspector diisi)
+        if (settings.profile != nextFloorProfile)
+        {
+            settings = pcgProfiles.FirstOrDefault(p => p.profile == PlayerProfile.Passive);
+        }
+
+        // 2. Terapkan parameter baru ke LevelGenerator
+        // (Kita menimpa nilai mapWidth/Height/LeafSize SEBELUM level dibuat)
+        this.mapWidth = settings.mapWidth;
+        this.mapHeight = settings.mapHeight;
+        this.minLeafSize = settings.minLeafSize;
+        this.maxLeafSize = settings.maxLeafSize;
+        
+        Debug.Log($"<color=cyan>DDA-PCG:</color> Menerapkan profil {settings.profile}. MapSize={mapWidth}x{mapHeight}, LeafSize={minLeafSize}-{maxLeafSize}");
+
+        // 3. Terapkan parameter baru ke Cinemachine
+        if (cameraBoundsCollider != null && cinemachineConfiner != null)
+        {
+            // Atur posisi collider ke tengah map baru
+            cameraBoundsCollider.transform.position = new Vector3(mapWidth / 2f, mapHeight / 2f, 0);
+
+            // Atur ukuran collider agar pas dengan map baru
+            cameraBoundsCollider.size = new Vector2(mapWidth, mapHeight);
+
+            // "Lupakan" cache lama agar confiner membaca bounds yang baru
+            cinemachineConfiner.InvalidateBoundingShapeCache();
+        }
+        else
+        {
+            Debug.LogError("CameraBoundsCollider atau CinemachineConfiner belum di-set di Inspector!");
+        }
+        
+        Debug.Log($"--- Generating Floor {currentFloor} ---");
+
+        bool isBossFloor = (currentFloor % floorPerBiome == 0);
+
+        if (isBossFloor)
+        {
+            Debug.Log($"<color=red>PERHATIAN: Ini Lantai BOSS (Lantai {currentFloor})</color>");
+        }
+
+        ClearLevel();
+
+        mapGrid = new int[mapWidth, mapHeight];
+        rooms.Clear();
+        roomTypes.Clear();
+        secretFloorAndCorridorTiles.Clear();
+        objectiveCompleted = false;
+
+        // Partisi
+        List<Leaf> leaves = new List<Leaf>();
+        Leaf root = new Leaf(new RectInt(0, 0, mapWidth, mapHeight), minLeafSize);
+        leaves.Add(root);
+
+        bool didSplit = true;
+
+        while (didSplit)
+        {
+            didSplit = false;
+            List<Leaf> tempLeaves = new List<Leaf>(leaves);
+            foreach (var leaf in tempLeaves)
+            {
+                if (leaf.leftChild == null && leaf.rightChild == null)
+                {
+                    List<Leaf> newLeavesToAdd = new List<Leaf>();
+                    if (leaf.rect.width > maxLeafSize || leaf.rect.height > maxLeafSize || Random.Range(0, 100) > 25)
+                    {
+                        if (leaf.Split())
+                        {
+                            newLeavesToAdd.Add(leaf.leftChild);
+                            newLeavesToAdd.Add(leaf.rightChild);
+                            didSplit = true;
+                        }
+                    }
+                    if (newLeavesToAdd.Count > 0)
+                    {
+                        leaves.Remove(leaf); // Hapus leaf lama
+                        leaves.AddRange(newLeavesToAdd); // Tambah anak-anaknya
+                    }
+                }
+            }
+        }
+
+        // Buat Ruangan & Koridor
+        root.CreateRooms(this);
+        rooms.Sort((a, b) => Vector2.Distance(a.center, Vector2.zero).CompareTo(Vector2.Distance(b.center, Vector2.zero)));
+        DetermineSpawnRooms(isBossFloor);
+        ConnectCorridorsRecursively(root);
+        // SETELAH tipe ruangan final ditentukan
+        // agar bisa menandai 'secretFloorAndCorridorTiles'
+        MarkAllSecretAreaTiles();
+        // Gambar Peta & Dinding 
+        DrawMap();
+
+        // Spawn Pemain 
+        SpawnPlayer();
+        SpawnExitPortal();
+        SpawnRoomObjects();
+        int totalEnemies = SpawnEnemies(isBossFloor);
+        SpawnRoomVisitTriggers();
+
+        int visitableRoomCount = 0;
+        foreach (var kvp in roomTypes)
+        {
+            // Kita hitung ruangan yang punya tantangan/isi
+            // (Start dan Exit biasanya tidak dihitung sebagai 'eksplorasi')
+            if (kvp.Value == RoomType.Combat || 
+                kvp.Value == RoomType.Trap || 
+                kvp.Value == RoomType.Treasure || 
+                kvp.Value == RoomType.RestStop ||
+                kvp.Value == RoomType.Secret ||
+                kvp.Value == RoomType.Boss)
+            {
+                visitableRoomCount++;
+            }
+            
+            // Catatan: Jika 'Normal' room juga dianggap eksplorasi, tambahkan || kvp.Value == RoomType.Normal
+        }
+
+        int totalLootCount = 0;
+
+        foreach (var kvp in roomTypes)
+        {
+            if (kvp.Value == RoomType.Treasure || kvp.Value == RoomType.Secret)
+            {
+                totalLootCount++; 
+            }
+           
+             if (kvp.Value == RoomType.Boss) totalLootCount++;
+        }
+
+        // Lapor ke Tracker
+        if (PlayerDataTracker.Instance != null)
+        {
+            PlayerDataTracker.Instance.StartNewFloor(visitableRoomCount, totalLootCount, totalEnemies);
+            PlayerDataTracker.Instance.SetTimerPaused(false);
+        }
+
+        if (PlayerDataTracker.Instance != null)
+        {
+            PlayerDataTracker.Instance.SetFloorTotals(visitableRoomCount, totalLootCount);
+            
+            // Reset data sesi
+            PlayerDataTracker.Instance.ResetFloorStats();
+            PlayerDataTracker.Instance.SetTimerPaused(false);
+        }
+
+        Debug.Log($"Floor {currentFloor} generated.");
+
+        if (GameHUDManager.Instance != null)
+        {
+        // 1. Hitung Biome Level (1, 2, 3...)
+        int biomeLevel = ((currentFloor - 1) / floorPerBiome) + 1;
+        
+        // 2. Hitung Index Urut (0, 1, 0...)
+        int rawIndex = (biomeLevel - 1) % biomeThemes.Count;
+
+        // 3. AMBIL DARI LIST ACAK (PENTING!)
+        // Pastikan list sudah ada (jaga-jaga)
+        if (currentBiomeOrder == null || currentBiomeOrder.Count != biomeThemes.Count) 
+        {
+            RandomizeBiomeOrder(); 
+        }
+        
+        int shuffledIndex = currentBiomeOrder[rawIndex]; // <-- Pakai ini, JANGAN rawIndex
+
+        // 4. Ambil Tema yang Benar
+        BiomeTheme theme = biomeThemes[shuffledIndex];
+        
+        // 5. Kirim ke HUD
+        GameHUDManager.Instance.UpdateLevelInfo(theme.biomeName, biomeLevel, currentFloor);
+        }
+
+        if (MusicManager.Instance != null && currentActiveTheme.biomeBGM != null)
+        {
+            MusicManager.Instance.PlayMusic(currentActiveTheme.biomeBGM);
+        }
+    }
+
+    public RoomType GetRoomType(RectInt room)
+    {
+        // Cek di dictionary roomTypes apakah RectInt ini sudah punya tipe
+        if (roomTypes.ContainsKey(room))
+        {
+            return roomTypes[room]; // Kembalikan tipe yang tersimpan
+        }
+
+        // Jika belum ada di dictionary (seharusnya tidak terjadi setelah DetermineSpawnRooms),
+        // kembalikan tipe default.
+        // Debug.LogWarning($"Tipe untuk ruangan {room.position} tidak ditemukan di dictionary, mengembalikan Normal.");
+        return RoomType.Normal;
+    }
+
+    private void ConnectCorridorsRecursively(Leaf leaf)
+    {
+        if (leaf == null || (leaf.leftChild == null && leaf.rightChild == null))
+        {
+            return; // Berhenti jika null atau sudah daun
+        }
+
+        // Proses anak kiri dan kanan dulu
+        ConnectCorridorsRecursively(leaf.leftChild);
+        ConnectCorridorsRecursively(leaf.rightChild);
+
+        // Baru hubungkan ruangan dari anak kiri dan kanan
+        if (leaf.leftChild != null && leaf.rightChild != null)
+        {
+            RectInt? roomA = leaf.leftChild.GetRoom(); // Ambil ruangan representatif
+            RectInt? roomB = leaf.rightChild.GetRoom();
+
+            if (roomA.HasValue && roomB.HasValue)
+            {
+                // Cek apakah salah satu Secret, JANGAN panggil CreateCorridor jika iya
+                RoomType typeA = GetRoomType(roomA.Value);
+                RoomType typeB = GetRoomType(roomB.Value);
+
+                if (typeA != RoomType.Secret && typeB != RoomType.Secret)
+                {
+                    CreateCorridor(roomA, roomB); // Buat koridor normal
+                }
+                // Jika salah satu Secret, koridor fisik tidak dibuat di mapGrid,
+                // tapi kita tetap perlu tahu koneksinya untuk dinding retak nanti di DrawMap
+            }
+        }
+    }
+
+    public void CarveRoom(RectInt room)
+    {
+        rooms.Add(room); // Simpan ruangan yang sudah jadi
+
+        RoomType currentRoomType = RoomType.Normal; // Default
+        if (rooms.Count == 1) // Asumsi ruangan pertama adalah Start
+        {
+            currentRoomType = RoomType.Start;
+            playerSpawnRoom = room; // Simpan sebagai spawn room
+        }
+
+        // Simpan tipenya
+        if (!roomTypes.ContainsKey(room))
+        {
+            roomTypes.Add(room, currentRoomType);
+        }
+
+        // Ukir grid
+        for (int x = room.x + 1; x < room.xMax - 1; x++)
+        {
+            for (int y = room.y + 1; y < room.yMax - 1; y++)
+            {
+                mapGrid[x, y] = 1; // 1 = Lantai
+            }
+        }
+    }
+
+    public void CreateCorridor(RectInt? roomA, RectInt? roomB)
+    {
+        if (roomA == null || roomB == null) return;
+        Vector2Int pointA = Vector2Int.RoundToInt(roomA.Value.center);
+        Vector2Int pointB = Vector2Int.RoundToInt(roomB.Value.center);
+
+        int H_corridorExtender = Random.Range(0, 2) == 0 ? -1 : 1;
+        int V_corridorExtender = Random.Range(0, 2) == 0 ? -1 : 1;
+
+        for (int x = Mathf.Min(pointA.x, pointB.x); x <= Mathf.Max(pointA.x, pointB.x); x++)
+        {
+            for (int i = 0; i < corridorSize; i++) mapGrid[x, pointA.y + H_corridorExtender * i] = 1;
+        }
+        for (int y = Mathf.Min(pointA.y, pointB.y); y <= Mathf.Max(pointA.y, pointB.y); y++)
+        {
+            for (int i = 0; i < corridorSize; i++) mapGrid[pointB.x + V_corridorExtender * i, y] = 1;
+        }
+    }
+
+    private void DrawMap()
+    {
+        // --- 1. AMBIL TEMA BIOME SAAT INI ---
+        if (biomeThemes.Count == 0)
+        {
+            Debug.LogError("List 'biomeThemes' di LevelGenerator masih kosong! Harap isi di Inspector.");
+            return;
+        }
+
+        if (currentBiomeOrder == null || currentBiomeOrder.Count == 0) RandomizeBiomeOrder();
+
+        int biomeLevel = ((currentFloor - 1) / floorPerBiome) + 1;
+        
+        int rawIndex = (biomeLevel - 1) % biomeThemes.Count;
+
+        int shuffledIndex = currentBiomeOrder[rawIndex]; 
+        
+        BiomeTheme currentActiveTheme = biomeThemes[shuffledIndex];
+
+        this.currentActiveTheme = currentActiveTheme;
+        TileBase currentFloorTile = currentActiveTheme.floorTile;
+        RuleTile currentWallRuleTile = currentActiveTheme.wallBaseRuleTile;
+
+        // --- BERSIHKAN SEMUA TILEMAP ---
+        floorTilemap.ClearAllTiles();
+        wallTilemap.ClearAllTiles();
+        hiddenTiles.Clear();
+
+        // --- LOOP TUNGGAL (REVISI) ---
+        for (int x = 0; x < mapWidth; x++)
+        {
+            for (int y = 0; y < mapHeight; y++)
+            {
+                Vector3Int currentPosInt = new Vector3Int(x, y, 0);
+                Vector2Int currentPos2D = new Vector2Int(x, y);
+                bool isSecretAreaTile = secretFloorAndCorridorTiles.Contains(currentPos2D);
+
+                if (mapGrid[x, y] == 1) // --- Ini LANTAI ---
+                {
+                    if (isSecretAreaTile)
+                    {
+                        // Sembunyikan lantai rahasia
+                        RectInt? ownerRoom = FindOwnerRoom(currentPos2D);
+                        if (!ownerRoom.HasValue) ownerRoom = FindClosestSecretRoom(currentPos2D);
+                        if (ownerRoom.HasValue)
+                        {
+                            if (!hiddenTiles.ContainsKey(ownerRoom.Value)) hiddenTiles[ownerRoom.Value] = new List<(Vector3Int, TileBase, bool)>();
+                            hiddenTiles[ownerRoom.Value].Add((currentPosInt, currentFloorTile, false));
+                        }
+                        wallTilemap.SetTile(currentPosInt, currentWallRuleTile);
+                    }
+                    else
+                    {
+                        // Gambar lantai normal
+                        floorTilemap.SetTile(currentPosInt, currentFloorTile);
+                    }
+
+                    // Logika Destructible Wall (tetap sama)
+                    // Cek 4 arah
+                    bool isAdjacentToNormalFloor = false;
+                    bool isAdjacentToSecretFloor = false;
+                    Vector2Int[] neighbors4Dir = { currentPos2D + Vector2Int.up, currentPos2D + Vector2Int.down, currentPos2D + Vector2Int.left, currentPos2D + Vector2Int.right };
+                    foreach (Vector2Int neighborPos in neighbors4Dir)
+                    {
+                        if (neighborPos.x < 0 || neighborPos.x >= mapWidth || neighborPos.y < 0 || neighborPos.y >= mapHeight) continue;
+                        if (mapGrid[neighborPos.x, neighborPos.y] == 1) // Hanya cek lantai
+                        {
+                            if (secretFloorAndCorridorTiles.Contains(neighborPos)) isAdjacentToSecretFloor = true;
+                            else isAdjacentToNormalFloor = true;
+                        }
+                    }
+                    if (isAdjacentToNormalFloor && isAdjacentToSecretFloor && isSecretAreaTile)
+                    {
+                        floorTilemap.SetTile(currentPosInt, currentFloorTile);
+
+                        if (destructibleWallPrefab != null)
+                        {
+                            RectInt? adjacentSecretRectOwner = FindClosestSecretRoom(currentPos2D);
+                            Vector3 wallSpawnPos = currentPosInt + new Vector3(0.5f, 0.5f, 0);
+                            GameObject wall = Instantiate(destructibleWallPrefab, wallSpawnPos, Quaternion.identity);
+
+                            DestructibleSecretWall wallScript = wall.GetComponent<DestructibleSecretWall>();
+                            if (wallScript != null && adjacentSecretRectOwner.HasValue) wallScript.associatedRoom = adjacentSecretRectOwner.Value;
+                            spawnedObjects.Add(wall);
+                        }
+                    }
+                }
+                else if (mapGrid[x, y] == 0) // --- Ini DINDING atau VOID ---
+                {
+                    // INI ADALAH LOGIKA "TRIK" ANDA
+                    if (isSecretAreaTile)
+                    {
+                        // --- DINDING RAHASIA ---
+                        // 1. Sembunyikan alas lantai
+                        RectInt? ownerRoom = FindOwnerRoom(currentPos2D);
+                        if (!ownerRoom.HasValue) ownerRoom = FindClosestSecretRoom(currentPos2D);
+                        if (ownerRoom.HasValue)
+                        {
+                            if (!hiddenTiles.ContainsKey(ownerRoom.Value)) hiddenTiles[ownerRoom.Value] = new List<(Vector3Int, TileBase, bool)>();
+                            hiddenTiles[ownerRoom.Value].Add((currentPosInt, currentFloorTile, false)); // false = lantai
+                            // 2. Sembunyikan Dinding
+                            hiddenTiles[ownerRoom.Value].Add((currentPosInt, currentWallRuleTile, true)); // true = dinding
+                        }
+                        wallTilemap.SetTile(currentPosInt, currentWallRuleTile);
+                    }
+                    else
+                    {
+                        // --- DINDING NORMAL (atau VOID) ---
+                        // 1. Gambar alas lantai (untuk "tumpuk")
+                        floorTilemap.SetTile(currentPosInt, currentFloorTile);
+                        // 2. Gambar dinding di atasnya
+                        wallTilemap.SetTile(currentPosInt, currentWallRuleTile);
+                    }
+                }
+            }
+        }
+    }
+
+    private RectInt? FindClosestSecretRoom(Vector2Int tilePos)
+    {
+        RectInt? closestRoom = null;
+        float minDistance = Mathf.Infinity;
+
+        foreach (var kvp in roomTypes)
+        {
+            if (kvp.Value == RoomType.Secret)
+            {
+                float dist = Vector2.Distance(tilePos, kvp.Key.center);
+                if (dist < minDistance)
+                {
+                    minDistance = dist;
+                    closestRoom = kvp.Key;
+                }
+            }
+        }
+        return closestRoom;
+    }
+
+    private void MarkAllSecretAreaTiles()
+    {
+        // Pastikan list ini kosong sebelum memulai
+        secretFloorAndCorridorTiles.Clear();
+
+        Queue<Vector2Int> tilesToExplore = new Queue<Vector2Int>();
+
+        // 1. Inisialisasi: Tambahkan SEMUA tile lantai DARI DALAM RectInt Secret Room
+        foreach (var kvp in roomTypes)
+        {
+            if (kvp.Value == RoomType.Secret)
+            {
+                RectInt secretRect = kvp.Key;
+                for (int x = secretRect.xMin + 1; x < secretRect.xMax - 1; x++)
+                {
+                    for (int y = secretRect.yMin + 1; y < secretRect.yMax - 1; y++)
+                    {
+                        Vector2Int pos = new Vector2Int(x, y);
+                        // Pastikan itu lantai
+                        if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight && mapGrid[x, y] == 1)
+                        {
+                            if (!secretFloorAndCorridorTiles.Contains(pos))
+                            {
+                                secretFloorAndCorridorTiles.Add(pos);
+                                tilesToExplore.Enqueue(pos);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Mulai Flood Fill untuk KORIDOR yang terhubung
+        Vector2Int[] neighbors4Dir = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
+
+        while (tilesToExplore.Count > 0)
+        {
+            Vector2Int current = tilesToExplore.Dequeue();
+            foreach (Vector2Int offset in neighbors4Dir)
+            {
+                Vector2Int neighborPos = current + offset;
+
+                // Cek batas map
+                if (neighborPos.x < 0 || neighborPos.x >= mapWidth || neighborPos.y < 0 || neighborPos.y >= mapHeight)
+                    continue;
+
+                // Cek apakah tetangga adalah lantai (grid=1) DAN BELUM ditandai
+                if (mapGrid[neighborPos.x, neighborPos.y] == 1 && !secretFloorAndCorridorTiles.Contains(neighborPos))
+                {
+                    // Cek apakah tetangga ini milik sebuah room
+                    RectInt? owner = FindOwnerRoom(neighborPos);
+
+                    // JIKA tetangga adalah KORIDOR (owner == null)
+                    if (!owner.HasValue)
+                    {
+                        // Ini koridor rahasia! Tandai dan lanjutkan fill
+                        secretFloorAndCorridorTiles.Add(neighborPos);
+                        tilesToExplore.Enqueue(neighborPos);
+                    }
+                    // JIKA tetangga adalah RUANGAN LAIN (owner.HasValue == true), BERHENTI.
+                }
+            }
+        }
+
+        Debug.Log($"<color=yellow>MarkAllSecretAreaTiles: Menandai {secretFloorAndCorridorTiles.Count} tile rahasia.</color>");
+    }
+
+    public RectInt? FindOwnerRoom(Vector2Int tilePos)
+    {
+        foreach (RectInt room in rooms)
+        {
+            // Cek HANYA di area lantai yang di-carve, BUKAN seluruh RectInt
+            // Sesuai dengan logika CarveRoom (x+1 sampai xMax-1)
+            if (tilePos.x > room.x && tilePos.x < room.xMax - 1 &&
+                tilePos.y > room.y && tilePos.y < room.yMax - 1)
+            {
+                // Cek apakah ini BUKAN koridor (untuk keamanan)
+                if (mapGrid[tilePos.x, tilePos.y] == 1)
+                {
+                    return room;
+                }
+            }
+        }
+        return null; // Ini koridor
+    }
+
+    private RectInt? GetContainingSecretRoom(Vector3Int tilePos)
+    {
+        foreach (var kvp in roomTypes)
+        {
+            if (kvp.Value == RoomType.Secret)
+            {
+                RectInt secretRect = kvp.Key;
+                // Perluas sedikit Rect untuk mencakup koridor yg menempel (ini kasar)
+                RectInt expandedRect = new RectInt(secretRect.x - corridorSize, secretRect.y - corridorSize,
+                                                  secretRect.width + corridorSize * 2, secretRect.height + corridorSize * 2);
+
+                if (expandedRect.Contains(new Vector2Int(tilePos.x, tilePos.y)))
+                {
+                    // Cek apakah tile ini ADA di mapGrid (lantai)
+                    if (mapGrid[tilePos.x, tilePos.y] == 1)
+                    {
+                        return secretRect; // Kembalikan Rect asli Secret Room
+                    }
+                }
+            }
+        }
+        return null; // Bukan bagian dari secret room/koridor
+    }
+
+    void SpawnPlayer()
+    {
+        if (rooms.Count > 0)
+        {
+            // 1. Hitung titik tengah ruangan pertama (Start Room)
+            int tileX = playerSpawnRoom.x + (playerSpawnRoom.width / 2);
+            int tileY = playerSpawnRoom.y + (playerSpawnRoom.height / 2);
+            Vector3 spawnPosition = new Vector3(tileX + 0.5f, tileY + 0.5f, 0);
+
+            // 2. Cek apakah Player sudah ada dari scene sebelumnya? (Sanctuary/Level Lalu)
+            if (playerInstance == null)
+            {
+                // Cari Player yang mungkin terbawa via DontDestroyOnLoad
+                // (Gunakan FindObjectOfType karena FindGameObjectWithTag kadang kurang akurat di awal scene)
+                PlayerController existingPlayer = FindObjectOfType<PlayerController>();
+                
+                if (existingPlayer != null)
+                {
+                    playerInstance = existingPlayer.gameObject;
+                }
+            }
+
+            // 3. Eksekusi Spawn / Pindah Posisi
+            if (playerInstance == null)
+            {
+                // KASUS A: New Game (Belum ada player) -> Buat Baru
+                playerInstance = Instantiate(playerPrefab, spawnPosition, Quaternion.identity);
+                DontDestroyOnLoad(playerInstance); // Wajib agar stat terbawa
+            }
+            else
+            {
+                // KASUS B: Continue/Next Floor (Player sudah ada) -> PINDAHKAN PAKSA
+                // Matikan dulu physics biar gak glitch saat dipindah
+                Rigidbody2D rb = playerInstance.GetComponent<Rigidbody2D>();
+                if (rb != null) rb.simulated = false; 
+
+                playerInstance.transform.position = spawnPosition;
+                
+                // Nyalakan lagi dan reset momentum
+                if (rb != null) 
+                {
+                    rb.simulated = true;
+                    rb.linearVelocity = Vector2.zero; // Unity 6 (atau rb.velocity di Unity lama)
+                }
+            }
+            
+            Debug.Log($"Player diposisikan di Start Room: {spawnPosition}");
+        }
+        else 
+        {
+            Debug.LogError("Error: Tidak ada ruangan untuk spawn player.");
+        }
+    }
+
+    int SpawnEnemies(bool isBossFloor = false)
+    {
+        int totalEnemiesSpawnedCount = 0;
+
+        if (enemyPrefabs == null || enemyPrefabs.Length == 0) return 0;
+
+        float targetDamageInterval = 1.0f; // Default (Passive/Explorer/Speedrunner)
+        
+        // Hitung level biome saat ini (misal: Floor 5/5=1, Floor 10/5=2)
+        int biomeLevel = ((currentFloor - 1) / floorPerBiome) + 1;
+
+        // 1. Ambil "Perintah" dari DDA
+        PlayerProfile profile = this.nextFloorProfile;
+
+        // 2. Tentukan parameter adaptasi musuh
+        float enemyMultiplier = 1.0f; // Pengali jumlah musuh
+        bool favorRanged = false; // Apakah kita utamakan musuh Ranged?
+
+        switch (profile)
+        {
+            case PlayerProfile.Aggressive:
+                enemyMultiplier = 1.5f; // Tambah 50% musuh
+                targetDamageInterval = 0.5f;
+                Debug.Log("DDA: Aggressive Profile -> Spawn Lebih Banyak Musuh");
+                break;
+
+            case PlayerProfile.Passive:
+                enemyMultiplier = 1.5f; // Tambah 50% musuh
+                favorRanged = true; // Prioritaskan musuh Ranged
+                Debug.Log("DDA: Passive Profile -> Spawn Banyak Musuh Ranged");
+                break;
+
+            case PlayerProfile.Explorer:
+                enemyMultiplier = 1.0f; // Normal
+                Debug.Log("DDA: Explorer Profile -> Spawn Normal");
+                break;
+
+            case PlayerProfile.Speedrunner:
+                enemyMultiplier = 1.8f; // Normal
+                Debug.Log("DDA: Speedrunner Profile -> Spawn 'Traffic Jam' (Sangat Banyak)");
+                break;
+        }
+
+        Dictionary<string, float> weightsToSend = ddaWeightDatabase[this.nextFloorProfile];
+        
+        if (this.nextFloorProfile == PlayerProfile.Aggressive)
+        {
+            targetDamageInterval = 0.5f; // LEBIH CEPAT untuk menghukum pemain agresif
+            Debug.Log("<color=red>DDA: Musuh menjadi lebih ganas (Attack Speed UP)!</color>");
+        }
+
+        foreach (RectInt currentRoom in rooms)
+        {
+            // Cek tipe ruangan
+            RoomType type = RoomType.Normal; // Default jika tidak ditemukan
+            if (roomTypes.ContainsKey(currentRoom))
+            {
+                type = roomTypes[currentRoom];
+            }
+
+            // Cek BOSS DULU, SEBELUM  skip ruangan lain
+            if (type == RoomType.Boss)
+            {
+                // Ini adalah Boss Room, spawn boss dan JANGAN spawn musuh lain
+                if (bossPrefabs != null && bossPrefabs.Length > 0)
+                {
+                    GameObject selectedBossPrefab = bossPrefabs[Random.Range(0, bossPrefabs.Length)];
+                    Vector3 spawnCenter = new Vector3(currentRoom.center.x + 0.5f, currentRoom.center.y + 0.5f, 0);
+                    GameObject boss = Instantiate(selectedBossPrefab, spawnCenter, Quaternion.identity);
+                    spawnedObjects.Add(boss);
+
+                    Health bossHealth = boss.GetComponentInChildren<Health>();
+                    if (bossHealth != null)
+                    {
+                        bossHealth.ApplyBiomeScaling(biomeLevel);
+                    }
+
+                    EnemyRoomKeeper bossKeeper = boss.GetComponent<EnemyRoomKeeper>();
+                    if (bossKeeper != null) bossKeeper.Initialize(currentRoom);
+                }
+                else { Debug.LogError("Array 'bossPrefabs' di LevelGenerator belum diisi!"); }
+                
+                GameObject trigger = SpawnLockingTrigger(currentRoom, lockingRoomTriggerPrefab);
+                if (trigger != null)
+                {
+                    LockingRoomTrigger lockScript = trigger.GetComponent<LockingRoomTrigger>();
+                    if (lockScript != null)
+                    {
+                        // Masukkan lagu Boss dari tema biome ke trigger ini
+                        lockScript.overrideMusic = currentActiveTheme.bossBGM;
+                    }
+                }
+                continue; // Selesai untuk ruangan ini, lanjut ke ruangan berikutnya
+            }
+
+            // Jangan spawn di ruangan player atau portal
+            if (type == RoomType.Start || type == RoomType.Exit || type == RoomType.RestStop || type == RoomType.Secret)
+            {
+                continue; // Skip ruangan-ruangan ini
+            }
+
+            int enemiesToSpawn = enemiesPerRoom; // Sementara pakai default
+
+            switch (type)
+            {
+                case RoomType.Combat:
+                    enemiesToSpawn = Mathf.CeilToInt(enemiesPerRoom * 2f);
+                    Debug.Log($"Combat Room: Spawning {enemiesToSpawn} musuh.");
+                    // SpawnLockingTrigger(currentRoom, lockingRoomTriggerPrefab);
+                    break;
+
+                case RoomType.Trap:
+                    enemiesToSpawn = Mathf.FloorToInt(enemiesPerRoom * 0.5f); // Lebih sedikit musuh, fokus jebakan
+                                                                              // Nanti tambahkan logika spawn jebakan di sini
+                    GameObject trapObj = SpawnLockingTrigger(currentRoom, trapPrefab);
+
+                    // Acak Jenis Jebakan
+                    if (trapObj != null)
+                    {
+                        TrapRoomController trapScript = trapObj.GetComponent<TrapRoomController>();
+                        if (trapScript != null)
+                        {
+                            // Pilih acak antara Poison atau TimeBomb (1 atau 2)
+                            // (Enum: 0=None, 1=Poison, 2=TimeBomb)
+                            int randomTrap = Random.Range(1, 3); 
+                            trapScript.trapType = (TrapRoomController.TrapType)randomTrap;
+
+                            Debug.Log($"Trap Room dibuat: {(TrapRoomController.TrapType)randomTrap}");
+                        }
+                    }
+                    break;
+
+                case RoomType.Treasure:
+                    enemiesToSpawn = Mathf.CeilToInt(enemiesPerRoom * 1.5f);
+                    Debug.Log($"Treasure Room: Spawning {enemiesToSpawn} musuh.");
+                    break;
+
+                case RoomType.Normal:
+                    enemiesToSpawn = enemiesPerRoom;
+                    break;
+
+                default:
+                    enemiesToSpawn = enemiesPerRoom; // Jumlah normal
+                    break;
+            }
+
+            enemiesToSpawn = Mathf.CeilToInt(enemiesToSpawn * enemyMultiplier);
+
+            for (int j = 0; j < enemiesToSpawn; j++)
+            {
+                Vector3 spawnPosition = new Vector3(
+                    Random.Range(currentRoom.x + 1, currentRoom.xMax - 1) + 0.5f,
+                    Random.Range(currentRoom.y + 1, currentRoom.yMax - 1) + 0.5f,
+                    0);
+
+                GameObject randomEnemyPrefab;
+
+                // --- Terapkan Komposisi DDA ---
+                if (favorRanged && Random.value < 0.6f) // 60% chance untuk spawn Ranged
+                {
+                    // Coba cari prefab Ranged
+                    randomEnemyPrefab = System.Array.Find(enemyPrefabs, prefab => prefab.name.Contains("Ranged"));
+                    if (randomEnemyPrefab == null) // Fallback jika Ranged tidak ada
+                    {
+                        randomEnemyPrefab = enemyPrefabs[Random.Range(0, enemyPrefabs.Length)];
+                    }
+                }
+                else
+                {
+                    // 30% chance (atau jika !favorRanged), spawn musuh acak
+                    randomEnemyPrefab = enemyPrefabs[Random.Range(0, enemyPrefabs.Length)];
+                }
+
+                GameObject enemy = Instantiate(randomEnemyPrefab, spawnPosition, Quaternion.identity);
+                spawnedObjects.Add(enemy);
+
+                totalEnemiesSpawnedCount++;
+
+                EnemyDamage dmgScript = enemy.GetComponent<EnemyDamage>();
+                if (dmgScript != null)
+                {
+                    dmgScript.damageInterval = targetDamageInterval;
+                }
+
+                // --- PANGGIL SCALING DI SINI (UNTUK MUSUH BIASA) ---
+                Health enemyHealth = enemy.GetComponent<Health>();
+                if (enemyHealth != null)
+                {
+                    enemyHealth.ApplyBiomeScaling(biomeLevel); // Panggil fungsi baru
+                }
+
+                // 1. Dapatkan "otak" BT dari musuh yang baru lahir
+                BehaviourTreeRunner btRunner = enemy.GetComponent<BehaviourTreeRunner>();
+
+                // 2. Jika "otak" itu ada
+                if (btRunner != null)
+                {
+                    // 3. Kirimkan perintah (bobot) dari DDA
+                    btRunner.UpdateDDAWeights(weightsToSend);
+                }
+                else
+                {
+                    Debug.LogWarning($"Musuh {enemy.name} di-spawn tanpa BehaviourTreeRunner!");
+                }
+                
+                EnemyRoomKeeper roomKeeper = enemy.GetComponent<EnemyRoomKeeper>();
+                if (roomKeeper != null)
+                {
+                    roomKeeper.Initialize(currentRoom);
+                }
+            }
+        }   
+
+        return totalEnemiesSpawnedCount;
+    }   
+
+    public void GoToNextFloor()
+    {
+        StartCoroutine(TransitionToNextFloorSequence());
+    }
+
+    private IEnumerator TransitionToNextFloorSequence()
+    {
+        // Fade Out 
+        if (levelFader != null) 
+        {
+            yield return levelFader.FadeOut();
+        }
+
+        if (!objectiveCompleted)
+        {
+            Debug.LogWarning("Objektif belum selesai!");
+            yield break;
+        }
+
+        currentFloor++;
+        GenerateLevel(); 
+
+        yield return new WaitForSeconds(0.5f);
+
+        // Fade In
+        if (levelFader != null) 
+        {
+            yield return levelFader.FadeIn();
+        }
+    }
+
+    private void ClearLevel()
+    {
+        foreach (GameObject obj in spawnedObjects)
+        {
+            if (obj != null) Destroy(obj);
+        }
+        spawnedObjects.Clear();
+    }
+
+    public void MarkObjectiveComplete()
+    {
+        objectiveCompleted = true;
+        Debug.Log($"Objektif Lantai {currentFloor - 1} Selesai. Exit Portal Aktif.");
+        // Logika visual portal aktif 
+        foreach (GameObject obj in spawnedObjects)
+        {
+            if (obj != null)
+            {
+                ExitPortal portalScript = obj.GetComponent<ExitPortal>();
+                if (portalScript != null)
+                {
+                    portalScript.UnlockPortal(); // Ubah warna jadi terang
+                }
+            }
+        }
+    }
+
+    private void DetermineSpawnRooms(bool isBossFloor = false)
+    {
+        if (rooms.Count == 0) return;
+
+        playerSpawnRoom = rooms[0]; 
+
+        if (roomTypes.ContainsKey(playerSpawnRoom))
+            roomTypes[playerSpawnRoom] = RoomType.Start;
+        else
+            roomTypes.Add(playerSpawnRoom, RoomType.Start);
+
+
+        // Temukan ruangan terjauh dari Start dan TANDAI sebagai Exit
+        exitSpawnRoom = playerSpawnRoom; // Default
+        int secretRoomCount = 0;
+        int treasureRoomCount = 0;
+        if (rooms.Count > 1)
+        {
+            float maxDistance = 0f;
+            Vector2 spawnCenter = playerSpawnRoom.center;
+
+            foreach (RectInt room in rooms)
+            {
+                if (room == playerSpawnRoom) continue;
+                float distance = Vector2.Distance(spawnCenter, room.center);
+                if (distance > maxDistance)
+                {
+                    maxDistance = distance;
+                    exitSpawnRoom = room;
+                }
+            }
+
+            if (isBossFloor)
+            {
+                // Jika ini lantai Boss, PAKSA Exit Room menjadi Boss Room
+                roomTypes[exitSpawnRoom] = RoomType.Boss;
+                Debug.Log($"<color=red>Ruangan {exitSpawnRoom.position} menjadi BOSS ROOM.</color>");
+                objectiveCompleted = false;
+            }
+            else
+            {
+                // Jika BUKAN lantai Boss, tandai sebagai Exit biasa
+                if (roomTypes.ContainsKey(exitSpawnRoom))
+                {
+                    roomTypes[exitSpawnRoom] = RoomType.Exit;
+                }
+                else
+                {
+                    roomTypes.Add(exitSpawnRoom, RoomType.Exit);
+                }
+            }
+
+            PlayerProfile profile = this.nextFloorProfile;
+            Debug.Log($"<color=cyan>LevelGenerator:</color> Menyesuaikan probabilitas ruangan untuk tipe {profile}...");
+
+            float localRestStopChance = restStopChance;
+            float localCombatRoomChance = combatRoomChance;
+            float localSecretRoomChance = secretRoomChance;
+            float localTrapRoomChance = trapRoomChance;
+
+            switch (profile)
+            {
+                case PlayerProfile.Explorer:
+                   
+                    localSecretRoomChance = 0.4f; // 40% Chance (Sangat Tinggi)
+                    localCombatRoomChance *= 0.5f; 
+                    break;
+
+                case PlayerProfile.Speedrunner:
+                    
+                    localSecretRoomChance = 0.05f; // 5% Chance (Sangat Rendah)
+                    localTrapRoomChance *= 2.0f; 
+                    break;
+
+                case PlayerProfile.Aggressive:
+                    // Normal Chance (sesuai inspector, misal 0.1)
+                    
+                    localCombatRoomChance *= 2.0f; 
+                    break;
+
+                case PlayerProfile.Passive:
+                    // Normal Chance
+                    
+                    localRestStopChance = 0.2f; // Kasih sedikit lebih banyak rest stop
+                    break;
+            }
+
+            int randomTreasureRoomIndex = Random.Range(1, rooms.Count-1);
+
+            for (int i = 0; i < rooms.Count; i++)
+            {
+                RectInt currentRoom = rooms[i];
+
+                if (currentRoom == playerSpawnRoom || currentRoom == exitSpawnRoom) continue;
+
+                // Cek apakah tipe sudah ditentukan 
+                // Jika belum (masih Normal atau tidak ada), coba tentukan tipe lain
+                if (!roomTypes.ContainsKey(currentRoom) || roomTypes[currentRoom] == RoomType.Normal)
+                {
+                    // tentukan TreasureRoom
+                    if (!isBossFloor && treasureRoomCount < 1 && i == randomTreasureRoomIndex)
+                    {
+                        roomTypes[currentRoom] = RoomType.Treasure;
+                        Debug.Log($"Ruangan {i} menjadi Treasure Room.");
+                        treasureRoomCount++;
+                        continue;
+                    }
+
+                    // tentukan SecretRoom
+                    if (Random.value < localSecretRoomChance && secretRoomCount < 1)
+                    {
+                        roomTypes[currentRoom] = RoomType.Secret;
+                        Debug.Log($"Ruangan {i} menjadi Secret Room.");
+                        secretRoomCount++;
+                        continue;
+                    }
+                    
+                    // tentukan TrapRoom
+                    if (Random.value < localTrapRoomChance)
+                    {
+                        roomTypes[currentRoom] = RoomType.Trap;
+                        Debug.Log($"Ruangan {i} menjadi Trap Room.");
+                        continue;
+                    }
+
+                    // tentukan RestStop
+                    if (Random.value < localRestStopChance)
+                    {
+                        roomTypes[currentRoom] = RoomType.RestStop;
+                        Debug.Log($"Ruangan {i} menjadi RestStop.");
+                        continue;
+                    }
+
+                    // tentukan CombatRoom 
+                    if (Random.value < localCombatRoomChance)
+                    {
+                        roomTypes[currentRoom] = RoomType.Combat;
+                        Debug.Log($"Ruangan {i} menjadi Combat Room.");
+                        continue;
+                    }
+
+                    // Jika tidak kena chance apa pun, biarkan Normal
+                    if (!roomTypes.ContainsKey(currentRoom))
+                    {
+                        roomTypes.Add(currentRoom, RoomType.Normal); // Pastikan ada entry Normal
+                    }
+
+                    Debug.Log($"Ternyata Ruangan {i} menjadi {roomTypes[currentRoom]} Room.");
+                }
+            }
+        }
+    }
+
+    void SpawnExitPortal()
+    {
+        bool isBossFloor = (currentFloor % floorPerBiome == 0);
+
+        if (!isBossFloor && rooms.Count > 1 && exitPortalPrefab != null)
+        {
+            Vector2 portalPosition = exitSpawnRoom.center;
+            GameObject portal = Instantiate(exitPortalPrefab, new Vector3(portalPosition.x + 0.5f, portalPosition.y + 0.5f, 0), Quaternion.identity);
+            spawnedObjects.Add(portal); // Tambahkan ke list
+
+            Collider2D roomCol = Physics2D.OverlapPoint(exitSpawnRoom.center, LayerMask.GetMask("Default")); // Pastikan Layer Room
+            if (roomCol != null)
+            {
+                RoomVisitTrigger rc = roomCol.GetComponent<RoomVisitTrigger>();
+                if (rc != null) rc.isExitRoom = true; // TANDAI INI!
+            }
+        }
+        else if (isBossFloor)
+        {
+            Debug.Log("Ini Lantai Boss, Exit Portal tidak di-spawn.");
+        }
+        // ... (warning logs) ...
+    }
+
+
+    private void SpawnRoomObjects()
+    {
+        hiddenObjects.Clear();
+
+        foreach (var kvp in roomTypes) // Loop di dictionary tipe ruangan
+        {
+            RectInt room = kvp.Key;
+            RoomType type = kvp.Value;
+            Vector3 roomCenter = new Vector3(room.center.x + 0.5f, room.center.y + 0.5f, 0);
+
+            switch (type)
+            {
+                case RoomType.RestStop:
+                    if (shrinePrefab != null)
+                    {
+                        GameObject shrine = Instantiate(shrinePrefab, roomCenter, Quaternion.identity);
+                        spawnedObjects.Add(shrine);
+                        Debug.Log("Shrine spawned in RestStop.");
+                    }
+                    break;
+
+                // Tambahkan case untuk spawn Trap di TrapRoom
+                case RoomType.Trap:
+                    if (trapPrefab != null)
+                    {
+                        GameObject trap = Instantiate(trapPrefab, roomCenter, Quaternion.identity);
+                        spawnedObjects.Add(trap);
+                        Debug.Log("Trap built in Trap Room.");
+                    }
+                    break;
+
+                // Tambahkan case untuk spawn Boss di BossRoom
+                // case RoomType.Boss: ... Instantiate(bossPrefabs, ...) ... break;
+
+                case RoomType.Treasure:
+                    if (treasureChestPrefab != null)
+                    {
+                        GameObject chestObj = Instantiate(treasureChestPrefab, roomCenter, Quaternion.identity);
+                        TreasureChest chestScript = chestObj.GetComponent<TreasureChest>();
+                        
+                        if (chestScript != null)
+                        {
+                            chestScript.isObjectiveChest = true; 
+                            chestScript.contentLoot = null; // Tidak ada senjata
+                        }
+                        
+                        spawnedObjects.Add(chestObj);
+                        Debug.Log("Objective Chest spawned.");
+                    }
+                    break;
+
+                case RoomType.Secret:
+                    if (treasureChestPrefab != null)
+                    {
+                        GameObject chestObj = Instantiate(treasureChestPrefab, roomCenter, Quaternion.identity);
+                        TreasureChest chestScript = chestObj.GetComponent<TreasureChest>();
+                        
+                        if (chestScript != null)
+                        {
+                            // PETI SENJATA
+                            chestScript.isObjectiveChest = false; 
+                            
+                            // Isi senjata acak
+                            if (possibleLoot != null && possibleLoot.Count > 0)
+                            {
+                                var loot = GetLootByDDAProfile(nextFloorProfile);
+                                chestScript.SetContent(loot);
+                            }
+                        }
+
+                        chestObj.SetActive(false); // Sembunyikan dulu
+                        if (!hiddenObjects.ContainsKey(room)) hiddenObjects[room] = new List<GameObject>();
+                        hiddenObjects[room].Add(chestObj);
+                        spawnedObjects.Add(chestObj);
+                    }
+                    break;
+            }
+        }
+    }
+
+    public void RevealSecretRoom(RectInt roomRect)
+    {
+        if (PlayerDataTracker.Instance != null)
+        {
+            PlayerDataTracker.Instance.RecordSecretRoomFound();
+        }
+        
+        Debug.Log($"Revealing Secret Room at {roomRect.position}...");
+
+        // 1. Gambar Tile yang disembunyikan
+        if (hiddenTiles.ContainsKey(roomRect))
+        {
+            foreach (var tileData in hiddenTiles[roomRect])
+            {
+                // --- INI PERBAIKANNYA ---
+                // 1. HAPUS tile kamuflase (batu bata solid) dari 'wallTilemap'
+                wallTilemap.SetTile(tileData.position, null);
+                // -------------------------
+
+                // 2. Gambar tile asli (kode Anda yang sudah ada)
+                if (tileData.isWall)
+                {
+                    wallTilemap.SetTile(tileData.position, tileData.tile);
+                }
+                else
+                {
+                    floorTilemap.SetTile(tileData.position, tileData.tile);
+                }
+            }
+            hiddenTiles.Remove(roomRect);
+        }
+
+        // 2. Aktifkan Objek yang disembunyikan (Kode ini sudah benar)
+        if (hiddenObjects.ContainsKey(roomRect))
+        {
+            foreach (GameObject obj in hiddenObjects[roomRect])
+            {
+                if (obj != null) obj.SetActive(true);
+            }
+            hiddenObjects.Remove(roomRect);
+        }
+    }
+
+    private void SetupDDAWeights()
+    {
+        ddaWeightDatabase = new Dictionary<PlayerProfile, Dictionary<string, float>>();
+
+        // Dilawan dengan taktik defensif/menghindar
+        ddaWeightDatabase.Add(PlayerProfile.Aggressive, new Dictionary<string, float>
+        {
+            { "Aggressive", 0.2f },
+            { "JagaJarak", 1.9f },
+            { "Evading", 1.5f },
+            { "SkillOriented", 1.2f }
+        });
+
+        // Dilawan dengan taktik agresif
+        ddaWeightDatabase.Add(PlayerProfile.Passive, new Dictionary<string, float>
+        {
+            { "Aggressive", 1.8f },
+            { "JagaJarak", 0.3f },
+            { "Evading", 1.0f },
+            { "SkillOriented", 1.4f }
+        });
+
+        ddaWeightDatabase.Add(PlayerProfile.Explorer, new Dictionary<string, float>
+        {
+            { "Aggressive", 1.5f },
+            { "JagaJarak", 1.3f },
+            { "Evading", 0.8f },
+            { "SkillOriented", 1.5f }
+        });
+
+        ddaWeightDatabase.Add(PlayerProfile.Speedrunner, new Dictionary<string, float>
+        {
+            { "Aggressive", 1.5f },
+            { "JagaJarak", 1.5f },
+            { "Evading", 1.8f },
+            { "SkillOriented", 1.2f }
+        });
+    }
+
+    // Dipanggil oleh Health.cs Boss saat Die()
+    public void SpawnPortalAfterBoss()
+    {
+        Health[] allCharacters = FindObjectsByType<Health>(FindObjectsSortMode.None);
+        
+        int livingBossCount = 0;
+
+        foreach (Health h in allCharacters)
+        {
+            // Cek apakah dia Boss DAN nyawanya masih ada (> 0)
+            // (Boss yang sedang mati saat ini nyawanya sudah <= 0, jadi tidak ikut terhitung)
+            if (h.characterType == Health.CharacterType.Boss && h.GetCurrentHealth() > 0)
+            {
+                livingBossCount++;
+            }
+        }
+
+        // Jika masih ada boss lain yang hidup, JANGAN spawn portal dulu
+        if (livingBossCount > 0)
+        {
+            Debug.Log($"Satu Boss mati, tapi masih ada {livingBossCount} Boss lain tersisa.");
+            return; 
+        }
+        
+        Debug.Log("<color=red>Boss dikalahkan! Portal Spawn!</color>");
+
+        // Pastikan kita punya prefab & referensi ruangan
+        // (exitSpawnRoom sudah di-set ke Boss Room oleh DetermineSpawnRooms)
+        if (sanctuaryPortalPrefab != null && exitSpawnRoom != null)
+        {
+            Vector2 portalPosition = exitSpawnRoom.center; //
+            GameObject portal = Instantiate(sanctuaryPortalPrefab, new Vector3(portalPosition.x + 0.5f, portalPosition.y + 0.5f, 0), Quaternion.identity);
+            spawnedObjects.Add(portal);
+
+            SceneTransferPortal portalScript = portal.GetComponentInChildren<SceneTransferPortal>();
+            if (portalScript != null)
+            {
+                portalScript.targetSceneName = "Sanctuary"; 
+                portalScript.advanceFloor = true;          
+                
+                Debug.Log("Portal Boss dikonfigurasi: Target Sanctuary & Advance Floor ON.");
+            }
+
+            // Tandai objektif selesai AGAR portal bisa dipakai
+            MarkObjectiveComplete(); //
+
+            if (MusicManager.Instance != null && currentActiveTheme != null)
+            {
+                if (currentActiveTheme.biomeBGM != null)
+                {
+                    Debug.Log("Boss Mati: Kembali ke Musik Biome.");
+                    MusicManager.Instance.PlayMusic(currentActiveTheme.biomeBGM);
+                }
+            }
+        }
+        else
+        {
+            Debug.LogError("Gagal spawn portal setelah boss! (Prefab/exitSpawnRoom null?)");
+        }
+
+        if (PlayerDataTracker.Instance != null)
+        {
+            PlayerDataTracker.Instance.RecordExitRoomFound(); // Boss room = Exit room
+            PlayerDataTracker.Instance.SetObjectiveComplete();
+        }
+    }
+
+    private GameObject SpawnLockingTrigger(RectInt room, GameObject prefabToSpawn)
+    {
+        if (lockingRoomTriggerPrefab == null || lockingWallPrefab == null)
+        {
+            Debug.LogError("Prefab 'LockingRoomTrigger' atau 'LockingWall' belum di-set di Inspector!");
+            return null;
+        }
+
+        Vector3 roomCenter = new Vector3(room.center.x + 0.5f, room.center.y + 0.5f, 0);
+        GameObject triggerObj = Instantiate(prefabToSpawn, roomCenter, Quaternion.identity);
+
+        triggerObj.GetComponent<BoxCollider2D>().size = new Vector2(room.width - 2, room.height - 2);
+
+        LockingRoomTrigger triggerScript = triggerObj.GetComponent<LockingRoomTrigger>();
+        if (triggerScript != null)
+        {
+            triggerScript.roomBounds = room;
+            triggerScript.doorPrefab = this.lockingWallPrefab;
+        }
+
+        spawnedObjects.Add(triggerObj);
+        return triggerObj;
+    }
+
+    public void RandomizeBiomeOrder()
+    {
+        currentBiomeOrder.Clear();
+    
+        for (int i = 0; i < biomeThemes.Count; i++)
+        {
+            currentBiomeOrder.Add(i);
+        }
+
+        for (int i = 0; i < currentBiomeOrder.Count; i++)
+        {
+            int temp = currentBiomeOrder[i];
+            int randomIndex = Random.Range(i, currentBiomeOrder.Count);
+            currentBiomeOrder[i] = currentBiomeOrder[randomIndex];
+            currentBiomeOrder[randomIndex] = temp;
+        }
+        
+        Debug.Log("Biome Order Diacak: " + string.Join(", ", currentBiomeOrder));
+    }
+
+    public void SetBiomeOrder(List<int> savedOrder)
+    {
+        // Validasi sederhana
+        if (savedOrder == null || savedOrder.Count != biomeThemes.Count)
+        {
+            Debug.LogWarning("Saved Biome Order tidak valid/cocok, generate baru.");
+            RandomizeBiomeOrder();
+        }
+        else
+        {
+            currentBiomeOrder = new List<int>(savedOrder);
+            Debug.Log("Biome Order Diload: " + string.Join(", ", currentBiomeOrder));
+        }
+    }
+
+    public List<int> GetBiomeOrder()
+    {
+        if (currentBiomeOrder == null || currentBiomeOrder.Count == 0)
+            RandomizeBiomeOrder();
+            
+        return currentBiomeOrder;
+    }
+
+    public int GetCurrentFloor()
+    {
+        return currentFloor;
+    }
+
+    public void SetCurrentFloor(int floor)
+    {
+        currentFloor = floor;
+        Debug.Log($"LevelGenerator: Floor diset ke {currentFloor} dari Save Data.");
+    }
+
+    public int GetCurrentBiomeLevel()
+    {
+        // Rumus: (Floor - 1) / FloorPerBiome + 1
+        return Mathf.Max(1, (currentFloor - 1) / floorPerBiome) + 1;
+    }
+
+    private PlayerController.LootData GetLootByDDAProfile(PlayerProfile profile)
+    {
+        // Default: Ambil semua kemungkinan
+        List<PlayerController.LootData> filteredList = new List<PlayerController.LootData>(possibleLoot);
+
+        // Filter Sederhana berdasarkan Kebutuhan
+        switch (profile)
+        {
+            case PlayerProfile.Aggressive:
+                // Prioritaskan SENJATA (DPS)
+                // Coba cari item yg tipenya Weapon. Jika ada, persempit listnya.
+                if (possibleLoot.Exists(x => x.itemType == PlayerController.LootData.ItemType.Weapon))
+                {
+                    filteredList = possibleLoot.FindAll(x => x.itemType == PlayerController.LootData.ItemType.Weapon);
+                }
+                break;
+
+            case PlayerProfile.Passive:
+            case PlayerProfile.Speedrunner:
+                // Prioritaskan SKILL (Utility/Survival/Speed)
+                if (possibleLoot.Exists(x => x.itemType == PlayerController.LootData.ItemType.Skill))
+                {
+                    filteredList = possibleLoot.FindAll(x => x.itemType == PlayerController.LootData.ItemType.Skill);
+                }
+                break;
+            
+            case PlayerProfile.Explorer:
+                // Explorer: Random total (Mereka suka kejutan apa saja)
+                filteredList = possibleLoot; 
+                break;
+        }
+
+        // Pilih acak dari list yang sudah disaring
+        if (filteredList.Count == 0) return possibleLoot[Random.Range(0, possibleLoot.Count)];
+        
+        return filteredList[Random.Range(0, filteredList.Count)];
+    }
+
+    void SpawnRoomVisitTriggers()
+    {
+        if (roomVisitTriggerPrefab == null) return;
+
+        foreach (RectInt room in rooms)
+        {
+            // Jangan spawn di Start Room (karena otomatis visited saat spawn)
+            // Atau biarkan saja, nanti langsung ke-trigger saat game mulai.
+
+            Vector3 roomCenter = new Vector3(room.center.x + 0.5f, room.center.y + 0.5f, 0);
+
+            // Instantiate
+            GameObject trigger = Instantiate(roomVisitTriggerPrefab, roomCenter, Quaternion.identity);
+            spawnedObjects.Add(trigger);
+
+            // Atur ukuran collider agar memenuhi ruangan (kurangi dikit biar gak kena dinding)
+            BoxCollider2D col = trigger.GetComponent<BoxCollider2D>();
+            if (col != null)
+            {
+                // Kurangi 2 unit (1 unit kiri, 1 unit kanan) agar pas di lantai
+                col.size = new Vector2(room.width - 2f, room.height - 2f);
+            }
+        }
+    }
+}
+
+public enum RoomType
+{
+    Normal,     // Ruangan biasa dengan musuh
+    Start,      // Ruangan spawn player (tanpa musuh)
+    Exit,       // Ruangan portal keluar (tanpa musuh)
+    RestStop,   // Ruangan aman tanpa musuh, ada Shrine
+    Combat,     // Ruangan arena, pintu terkunci, banyak musuh
+    Treasure,   // Ruangan objektif utama (nanti)
+    Boss,        // Ruangan khusus untuk Boss Battle (nanti)
+    Trap,
+    Secret
+}

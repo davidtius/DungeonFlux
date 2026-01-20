@@ -1,0 +1,195 @@
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using TMPro;
+using System.Collections;
+using System.Collections.Generic;
+
+public class GameOverManager : MonoBehaviour
+{
+    public static GameOverManager Instance { get; private set; }
+
+    [Header("UI Panels")]
+    public GameObject gameOverPanel;
+    public string mainMenuSceneName = "MainMenu";
+
+    [Header("Stats Text References")]
+    public TextMeshProUGUI biomeFloorText;  // "Biome: Crypts - Floor 3"
+    public TextMeshProUGUI enemiesKilledText; // "S: 5 | R: 2 | T: 1"
+    public TextMeshProUGUI bossKilledText;    // "Bosses Defeated: 0"
+    public TextMeshProUGUI damageDealtText;   // "Total Damage: 1500"
+    public TextMeshProUGUI playTimeText;      // "Time: 10:25"
+    public TextMeshProUGUI ectoText;          // "Ectoplasma: 50"
+    public TextMeshProUGUI weaponsText;       // "Weapons: Fireball, Iceball"
+    public TextMeshProUGUI upgradeStatsText;  // "Lvl: HP(2) Dmg(1) Spd(0)"
+    public TextMeshProUGUI playerTypeText;    // "Playstyle: Aggressive"
+
+    [Header("Audio")]
+    public AudioSource sfxSource;
+    public AudioClip deathSound; 
+    public AudioClip clickSound; 
+    public AudioClip hoverSound;
+
+    void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
+
+    void Start()
+    {
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+    }
+
+    public void TriggerGameOver()
+    {
+        StartCoroutine(GameOverSequence());
+    }
+
+    IEnumerator GameOverSequence()
+    {
+        // 1. Audio & Log
+        Debug.Log("GAME OVER!");
+
+        if (MusicManager.Instance != null)
+        {
+            MusicManager.Instance.StopMusic();
+        }
+
+        if (sfxSource != null && deathSound != null)
+        {
+            sfxSource.PlayOneShot(deathSound);
+        }
+
+        // 2. Tunggu sebentar
+        yield return new WaitForSeconds(1.5f);
+
+        // 3. Tampilkan Data ke UI
+        ShowStats();
+
+        // 4. Munculkan Panel
+        if (gameOverPanel != null) gameOverPanel.SetActive(true);
+
+        // 5. Stop Waktu & Munculkan Kursor
+        Time.timeScale = 0f;
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+    }
+
+    void ShowStats()
+    {
+        // --- AMBIL REFERENSI ---
+        PlayerDataTracker tracker = PlayerDataTracker.Instance;
+        LevelGenerator levelGen = LevelGenerator.Instance;
+        
+        // Kita load save data untuk info upgrade & senjata terakhir
+        SaveData saveData = SaveManager.HasSaveFile() ? SaveManager.Load() : new SaveData();
+
+        // 1. Biome & Floor
+        if (biomeFloorText != null && levelGen != null)
+        {
+            string biomeName = levelGen.GetCurrentBiomeTheme().biomeName;
+            biomeFloorText.text = $"{biomeName} - Floor {levelGen.GetCurrentFloor()}";
+        }
+
+        // 2. Kill Counts
+        if (enemiesKilledText != null && tracker != null)
+        {
+            enemiesKilledText.text = $"Swarmer Killed: {tracker.totalSwarmerKilled}\nRanged Killed: {tracker.totalRangedKilled}\nTank Killed: {tracker.totalTankKilled}";
+        }
+
+        // 3. Boss Killed
+        if (bossKilledText != null && tracker != null)
+        {
+            bossKilledText.text = $"Boss Killed: {tracker.totalBossKilled}";
+        }
+
+        // 4. Damage Dealt
+        if (damageDealtText != null && tracker != null)
+        {
+            damageDealtText.text = $"Total Damage Dealt: {tracker.totalRunDamageDealt}";
+        }
+
+        // 5. Playtime
+        if (playTimeText != null && tracker != null)
+        {
+            float t = tracker.totalRunTime;
+            int min = Mathf.FloorToInt(t / 60F);
+            int sec = Mathf.FloorToInt(t % 60F);
+            playTimeText.text = $"PlayTime: {min:00}:{sec:00}";
+        }
+
+        // 6. Ectoplasma (Yang dibawa saat mati)
+        if (ectoText != null && tracker != null)
+        {
+            ectoText.text = $"Remaining\nEctoplasma: {tracker.totalEctoplasma}";
+        }
+
+        // 7. Weapons Owned (Dari SaveData inventory terakhir)
+        string weaponListString = "None";
+        PlayerController player = FindAnyObjectByType<PlayerController>(FindObjectsInactive.Include);
+
+        if (player != null)
+        {
+            List<string> names = new List<string>();
+            foreach (var w in player.ownedWeapons)
+            {
+                names.Add(w.itemName);
+            }
+            if (names.Count > 0) weaponListString = string.Join(", ", names);
+        }
+        else
+        {
+            // Fallback ke Save Data jika player null (jarang terjadi)
+            SaveData saved = SaveManager.HasSaveFile() ? SaveManager.Load() : new SaveData();
+            if (saveData.savedWeaponNames != null && saveData.savedWeaponNames.Count > 0)
+                weaponListString = string.Join(", ", saveData.savedWeaponNames);
+        }
+
+        if (weaponsText != null)
+        {
+            weaponsText.text = $"Weapons: {weaponListString}";
+        }
+
+        // 8. Latest Upgrade Stats (Dari SaveData)
+        if (upgradeStatsText != null)
+        {
+            upgradeStatsText.text = $"Upgrades:HP ({saveData.healthLevel}), Dmg ({saveData.damageLevel}), Spd ({saveData.speedLevel}), Light ({saveData.lightLevel})";
+        }
+
+        // 9. Overall Player Type
+        if (playerTypeText != null && DDAManager.Instance != null)
+        {
+            playerTypeText.text = $"Playstyle: {DDAManager.Instance.GetCurrentProfileName()}";
+        }
+    }
+
+    // --- FUNGSI TOMBOL: RETURN TO MENU ---
+    public void ReturnToMenu()
+    {
+        Time.timeScale = 1f; // Kembalikan waktu
+
+       SaveManager.DeleteSave();
+
+        if (PlayerDataTracker.Instance != null)
+        {
+            PlayerDataTracker.Instance.ResetFloorStats();
+            PlayerDataTracker.Instance.totalEctoplasma = 0;
+            Destroy(PlayerDataTracker.Instance.gameObject);
+        }
+
+        Debug.Log("GAME OVER: Semua progress dihapus. Pemain kembali ke titik nol.");
+
+        // Pindah Scene
+        LevelLoader.LoadLevel(mainMenuSceneName);
+    }
+
+    public void PlayClickSFX()
+    {
+        if (sfxSource != null && clickSound != null) sfxSource.PlayOneShot(clickSound);
+    }
+
+    public void PlayHoverSFX()
+    {
+        if (sfxSource != null && hoverSound != null) sfxSource.PlayOneShot(hoverSound);
+    }
+}

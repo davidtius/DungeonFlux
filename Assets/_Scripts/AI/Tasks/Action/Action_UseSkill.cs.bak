@@ -1,0 +1,63 @@
+using UnityEngine;
+using DungeonFlux.AI;
+
+namespace DungeonFlux.Tasks
+{
+    public class Action_UseSkill : MonoBehaviour
+    {
+        private RangedAI rangedAI;
+        private TankAI tankAI;
+        private Animator animator; 
+        private Transform playerTransform; 
+
+        void Start()
+        {
+            rangedAI = GetComponent<RangedAI>();
+            tankAI = GetComponent<TankAI>();
+            animator = GetComponent<Animator>();
+
+            // referensi player untuk arah hadap
+            GameObject playerObj = GameObject.FindGameObjectWithTag("Player"); 
+            if (playerObj != null) playerTransform = playerObj.transform;
+        }
+
+        public NodeState ExecuteTask()
+        {
+            if (playerTransform == null) return NodeState.FAILURE;
+
+            Vector2 directionToPlayer = (playerTransform.position - transform.position).normalized;
+
+            // Cek apakah ini musuh Ranged dan bisa menembak
+            if (rangedAI != null)
+            {
+                // Hadapkan animasi ke player
+                animator.SetFloat("moveX", directionToPlayer.x);
+                animator.SetFloat("moveY", directionToPlayer.y);
+                
+                // (Saran: Tambahkan trigger untuk animasi "menembak")
+                // animator.SetTrigger("Attack");
+        
+                rangedAI.Shoot(directionToPlayer);
+                return NodeState.SUCCESS; // Berhasil mencoba menembak
+            }
+            
+            // Cek apakah ini musuh Tank dan bisa GroundSlam
+            if (tankAI != null)
+            {
+                // Hadapkan animasi ke player
+                animator.SetFloat("moveX", directionToPlayer.x);
+                        animator.SetFloat("moveY", directionToPlayer.y);
+
+                // (Saran: Tambahkan trigger untuk animasi "skill")
+                // animator.SetTrigger("Skill");
+        
+                tankAI.UseGroundSlam();
+                return NodeState.SUCCESS; // Berhasil mencoba skill
+            }
+
+            // Jika musuh ini tidak punya skrip skill (misal Swarmer)
+            // Task ini GAGAL.
+            return NodeState.FAILURE;
+        }
+    }
+}

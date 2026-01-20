@@ -1,0 +1,81 @@
+using UnityEngine;
+using UnityEngine.Audio;
+using System.Collections;
+
+public class MusicManager : MonoBehaviour
+{
+    public static MusicManager Instance { get; private set; }
+
+    [Header("Audio Settings")]
+    public AudioSource musicSource; // Drag Audio Source di sini
+    public float fadeDuration = 1.0f; // Durasi ganti lagu (detik)
+
+    private Coroutine fadeCoroutine;
+
+    void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
+
+    public void PlayMusic(AudioClip newClip)
+    {
+        if (newClip == null) return;
+        
+        // Jika lagu yang diminta sama dengan yang sedang main, jangan diganti (biar gak reset dari awal)
+        if (musicSource.clip == newClip && musicSource.isPlaying) return;
+
+        if (fadeCoroutine != null) StopCoroutine(fadeCoroutine);
+        fadeCoroutine = StartCoroutine(FadeToNewTrack(newClip));
+    }
+
+    private IEnumerator FadeToNewTrack(AudioClip newClip)
+    {
+        float startVolume = musicSource.volume;
+
+        // 1. Fade Out (Mengecil)
+        for (float t = 0; t < fadeDuration; t += Time.deltaTime)
+        {
+            musicSource.volume = Mathf.Lerp(startVolume, 0, t / fadeDuration);
+            yield return null;
+        }
+        musicSource.volume = 0;
+        musicSource.Stop();
+
+        // 2. Ganti Lagu
+        musicSource.clip = newClip;
+        musicSource.Play();
+
+        // 3. Fade In (Membesar)
+        // Kita asumsikan volume maksimal yang diinginkan adalah startVolume awal (biasanya 1 atau dari slider)
+        // Agar aman, kita kembalikan ke 1 (karena kontrol volume utama ada di Audio Mixer)
+        for (float t = 0; t < fadeDuration; t += Time.deltaTime)
+        {
+            musicSource.volume = Mathf.Lerp(0, 1f, t / fadeDuration);
+            yield return null;
+        }
+        musicSource.volume = 1f;
+    }
+
+    private IEnumerator FadeOutAndStop()
+    {
+        float startVolume = musicSource.volume;
+
+        // Kecilkan volume pelan-pelan
+        for (float t = 0; t < fadeDuration; t += Time.deltaTime)
+        {
+            musicSource.volume = Mathf.Lerp(startVolume, 0, t / fadeDuration);
+            yield return null;
+        }
+
+        // Matikan total
+        musicSource.volume = 0;
+        musicSource.Stop();
+    }
+
+    public void StopMusic()
+    {
+        if (fadeCoroutine != null) StopCoroutine(fadeCoroutine);
+        fadeCoroutine = StartCoroutine(FadeOutAndStop());
+    }
+}

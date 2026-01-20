@@ -1,0 +1,41 @@
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.Audio;
+
+public class GameSettingsLoader : MonoBehaviour
+{
+    [Header("References")]
+    public AudioMixer mainMixer;
+    public Image brightnessOverlay;
+
+    void Start()
+    {
+        ApplySettings();
+    }
+
+    public void ApplySettings()
+    {
+
+        float volMaster = PlayerPrefs.GetFloat("MasterVol", 1f);
+        float volMusic = PlayerPrefs.GetFloat("MusicVol", 1f);
+        float volSFX = PlayerPrefs.GetFloat("SFXVol", 1f);
+
+        if (mainMixer != null)
+        {
+            mainMixer.SetFloat("MasterVol", Mathf.Log10(volMaster) * 20);
+            mainMixer.SetFloat("MusicVol", Mathf.Log10(volMusic) * 20);
+            mainMixer.SetFloat("SFXVol", Mathf.Log10(volSFX) * 20);
+        }
+
+        float brightVal = PlayerPrefs.GetFloat("Brightness", 1f);
+
+        if (brightnessOverlay != null)
+        {
+            float alpha = 1f - brightVal;
+
+            Color c = brightnessOverlay.color;
+            c.a = alpha;
+            brightnessOverlay.color = c;
+        }
+    }
+}

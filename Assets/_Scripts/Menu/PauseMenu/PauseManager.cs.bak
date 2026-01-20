@@ -1,0 +1,161 @@
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem; 
+using UnityEngine.Audio; 
+using UnityEngine.UI;
+
+public class PauseManager : MonoBehaviour
+{
+    [Header("UI References")]
+    public GameObject pausePanel;
+    public GameObject optionsPanel;
+    public GameObject controlsPanel;
+    public string mainMenuSceneName = "MainMenu";
+
+    [Header("Audio Settings")]
+    public AudioSource sfxSource;   
+    public AudioClip clickSound;  
+    public AudioClip hoverSound; 
+    public AudioMixer mainMixer;
+
+    [Header("Visual Settings")]
+    public Image brightnessOverlay;
+
+    // State
+    private bool isPaused = false;
+
+    public void TogglePause()
+    {
+        if (isPaused)
+        {
+            ResumeGame();
+        }
+        else
+        {
+            PauseGame();
+        }
+    }
+
+    public void ResumeGame()
+    {
+        PlayClickSFX();
+        isPaused = false;
+        pausePanel.SetActive(false);
+        if (optionsPanel != null) optionsPanel.SetActive(false);
+        
+        Time.timeScale = 1f;
+    }
+
+    void PauseGame()
+    {
+        PlayClickSFX();
+        isPaused = true;
+        pausePanel.SetActive(true);
+        
+        Time.timeScale = 0f;
+    }
+
+    public void LoadMainMenu()
+    {
+        PlayClickSFX();
+
+        Time.timeScale = 1f;
+
+        if (DDAManager.Instance != null)
+        {
+            DDAManager.Instance.SaveDDAData();
+            Debug.Log("DDA Data Saved before quitting to menu.");
+        }
+        
+        if (FindAnyObjectByType<LevelLoader>()) 
+        {
+            LevelLoader.LoadLevel(mainMenuSceneName);
+        }
+        else
+        {
+            SceneManager.LoadScene(mainMenuSceneName);
+        }
+    }
+
+    public void OpenOptions()
+    {
+        PlayClickSFX();
+        optionsPanel.SetActive(true);
+        pausePanel.SetActive(false);
+    }
+
+    public void CloseOptions()
+    {
+        PlayClickSFX();
+        optionsPanel.SetActive(false);
+        pausePanel.SetActive(true);
+    }
+
+    public void OpenControls()
+    {
+        PlayClickSFX();
+        controlsPanel.SetActive(true);
+        // (Opsional) Sembunyikan panel lain jika perlu
+        if (optionsPanel != null) optionsPanel.SetActive(false); 
+    }
+
+    public void CloseControls()
+    {
+        PlayClickSFX();
+        controlsPanel.SetActive(false);
+        // Kembali ke Options (karena biasanya tombol Controls ada di dalam Options)
+        if (optionsPanel != null) optionsPanel.SetActive(true);
+    }
+
+    public void SetMasterVolume(float volume)
+    {
+        // Ubah suara
+        if (mainMixer != null) mainMixer.SetFloat("MasterVol", Mathf.Log10(volume) * 20);
+        
+        // Simpan permanen ke PlayerPrefs
+        PlayerPrefs.SetFloat("MasterVol", volume);
+        PlayerPrefs.Save();
+    }
+
+    public void SetMusicVolume(float volume)
+    {
+        if (mainMixer != null) mainMixer.SetFloat("MusicVol", Mathf.Log10(volume) * 20);
+        PlayerPrefs.SetFloat("MusicVol", volume);
+        PlayerPrefs.Save();
+    }
+
+    public void SetSFXVolume(float volume)
+    {
+        if (mainMixer != null) mainMixer.SetFloat("SFXVol", Mathf.Log10(volume) * 20);
+        PlayerPrefs.SetFloat("SFXVol", volume);
+        PlayerPrefs.Save();
+    }
+
+    public void SetBrightness(float value)
+    {
+        if (brightnessOverlay != null)
+        {
+            float alpha = 1f - value;
+            Color color = brightnessOverlay.color;
+            color.a = alpha;
+            brightnessOverlay.color = color;
+        }
+        
+        // Simpan permanen
+        PlayerPrefs.SetFloat("Brightness", value);
+        PlayerPrefs.Save();
+    }
+
+    public void PlayClickSFX()
+    {
+        if (sfxSource != null && clickSound != null)
+        {
+            sfxSource.PlayOneShot(clickSound);
+        }
+    }
+
+    public void PlayHoverSFX()
+    {
+        if (sfxSource != null && hoverSound != null) sfxSource.PlayOneShot(hoverSound);
+    }
+}

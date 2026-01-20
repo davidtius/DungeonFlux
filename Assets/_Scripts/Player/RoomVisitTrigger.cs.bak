@@ -1,0 +1,34 @@
+using UnityEngine;
+
+[RequireComponent(typeof(BoxCollider2D))]
+public class RoomVisitTrigger : MonoBehaviour
+{
+    public bool isExitRoom = false; // Ditandai oleh Generator
+    private bool hasBeenVisited = false;
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            // Cek Logic hanya jika BELUM pernah dikunjungi
+            if (!hasBeenVisited)
+            {
+                hasBeenVisited = true; // Kunci pintu logic
+
+                Debug.Log("Room Visited.");
+
+                if (PlayerDataTracker.Instance != null) 
+                {
+                    // 1. Catat Kunjungan Ruangan
+                    PlayerDataTracker.Instance.RecordRoomVisited();
+
+                    // 2. Catat Jika Ini Exit Room (Sekalian di sini biar efisien)
+                    if (isExitRoom)
+                    {
+                        PlayerDataTracker.Instance.RecordExitRoomFound();
+                    }
+                }
+            }
+        }
+    }
+}

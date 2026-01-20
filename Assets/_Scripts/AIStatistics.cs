@@ -1,0 +1,39 @@
+using UnityEngine;
+using System.Collections.Generic;
+
+public class AIStatistics : MonoBehaviour
+{
+
+    public static Dictionary<string, int> tacticCounts = new Dictionary<string, int>();
+
+    public static void RecordDecision(string tacticName)
+    {
+        if (tacticCounts.ContainsKey(tacticName))
+        {
+            tacticCounts[tacticName]++;
+        }
+        else
+        {
+            tacticCounts.Add(tacticName, 1);
+        }
+    }
+
+    public static void PrintStats()
+    {
+        Debug.Log("=== STATISTIK KEPUTUSAN AI ===");
+        int total = 0;
+        foreach (var pair in tacticCounts)
+        {
+            Debug.Log($"Taktik [{pair.Key}]: {pair.Value} kali");
+            total += pair.Value;
+        }
+        Debug.Log($"TOTAL KEPUTUSAN: {total}");
+        Debug.Log("==============================");
+    }
+
+    public static void ResetStats()
+    {
+        tacticCounts.Clear();
+        Debug.Log("Statistik AI di-reset.");
+    }
+}

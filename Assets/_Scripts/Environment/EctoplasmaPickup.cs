@@ -1,0 +1,87 @@
+using UnityEngine;
+
+public class EctoplasmaPickup : MonoBehaviour
+{
+    [Header("Settings")]
+    public int value = 1;
+    public float moveSpeed = 8f;
+    public float magnetRange = 3f;
+    public float pickupRange = 0.5f;
+
+    [Header("Audio")]
+    public AudioClip collectSound;
+
+    private Transform playerTransform;
+    private bool isMagnetized = false;
+    private bool isCollected = false;
+    private Animator animator;
+
+    void Start()
+    {
+        animator = GetComponent<Animator>();
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null) playerTransform = player.transform;
+
+        Destroy(gameObject, 30f);
+    }
+
+    void Update()
+    {
+        if (isCollected || playerTransform == null) return;
+
+        float distance = Vector2.Distance(transform.position, playerTransform.position);
+
+        if (distance <= pickupRange)
+        {
+            Collect();
+            return;
+        }
+
+        if (distance < magnetRange)
+        {
+            isMagnetized = true;
+        }
+
+        if (isMagnetized)
+        {
+            float step = moveSpeed * Time.deltaTime * (3f / (distance + 0.1f));
+            transform.position = Vector2.MoveTowards(transform.position, playerTransform.position, step);
+        }
+    }
+
+    void Collect()
+    {
+        if (isCollected) return;
+
+        isCollected = true;
+
+        if (PlayerDataTracker.Instance != null)
+        {
+            PlayerDataTracker.Instance.AddEctoplasma(value);
+        }
+
+        if (collectSound != null)
+        {
+            AudioSource.PlayClipAtPoint(collectSound, transform.position);
+        }
+
+        if (animator != null)
+        {
+            animator.SetTrigger("Collect");
+
+            Collider2D col = GetComponent<Collider2D>();
+            if (col != null) col.enabled = false;
+
+            Rigidbody2D rb = GetComponent<Rigidbody2D>();
+            if (rb != null) rb.linearVelocity = Vector2.zero;
+
+            this.enabled = false;
+
+            Destroy(gameObject, 1f);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+}

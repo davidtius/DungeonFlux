@@ -1,0 +1,72 @@
+using UnityEngine;
+using UnityEngine.UI; 
+
+public class WorldSpaceHealthBar : MonoBehaviour
+{
+    [Header("Settings")]
+    // Sesuaikan ini dengan radius lampu senter player Anda (misal 6 atau 7)
+    public float visibleDistance = 5.0f;
+    public Health owner;
+
+    // Slot untuk 'Fill' (kotak merah)
+    public Image fillImage;
+    private Transform mainCameraTransform;
+    private Transform playerTransform;
+    private Canvas canvas;
+
+    void Start()
+    {
+        mainCameraTransform = Camera.main.transform;
+
+        canvas = GetComponent<Canvas>(); 
+        
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null) playerTransform = player.transform;
+
+        if (owner != null && owner.characterType == Health.CharacterType.Boss) visibleDistance = 15f;
+    }
+
+    // Fungsi ini akan kita panggil dari Health.cs
+    public void UpdateHealth(float currentHealth, float maxHealth)
+    {
+        // Hitung persentase (nilai 0.0 s/d 1.0)
+        float fillAmount = currentHealth / maxHealth;
+        
+        // Terapkan ke isian 'Fill'
+        if (fillImage != null)
+        {
+            fillImage.fillAmount = fillAmount;
+        } else
+        {
+            Debug.Log("fill Image tidak ditemukan");
+        }
+    }
+
+    // LateUpdate berjalan setelah semua pergerakan
+    // Ini membuat HP Bar selalu menghadap kamera (Billboarding)
+    void LateUpdate()
+    {
+        if (mainCameraTransform != null)
+        {
+            // Balik HP bar agar menghadap kamera
+            transform.LookAt(transform.position + mainCameraTransform.rotation * Vector3.forward,
+                             mainCameraTransform.rotation * Vector3.up);
+        }
+
+        if (playerTransform != null && canvas != null)
+        {
+            float distance = Vector2.Distance(transform.position, playerTransform.position);
+
+            // Jika dalam jarak pandang -> Muncul (enabled)
+            // Jika di luar jarak pandang -> Hilang (disabled)
+            if (distance <= visibleDistance)
+            {
+                canvas.enabled = true;
+            }
+            else
+            {
+                canvas.enabled = false;
+            }
+        }
+    }
+}

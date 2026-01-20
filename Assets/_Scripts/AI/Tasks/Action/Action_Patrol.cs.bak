@@ -1,0 +1,99 @@
+using UnityEngine;
+using DungeonFlux.AI;
+
+namespace DungeonFlux.Tasks
+{
+    public class Action_Patrol : MonoBehaviour
+    {
+        [Header("Patrol Logic")]
+        public float patrolSpeed = 2f;
+        public float patrolRadius = 3f; // Jarak patroli dari titik awal
+        public float waitTime = 1f; // Waktu diam di tiap titik
+        public LayerMask obstacleLayer;
+
+        [Header("Rotation")]
+        public float rotationSpeed = 5f;
+
+        private Vector2 startPosition;
+        private Vector2 targetPosition;
+        private float waitTimer;
+        private Animator animator;
+        private Health myHealth;
+
+        void Awake()
+        {
+            myHealth = GetComponent<Health>();
+            animator = GetComponent<Animator>();
+            startPosition = transform.position;
+            if (obstacleLayer == 0) obstacleLayer = LayerMask.GetMask("Default");
+            SetNewPatrolTarget();
+        }
+
+        public NodeState ExecuteTask()
+        {
+            if (animator == null) 
+            {
+                animator = GetComponent<Animator>(); 
+                if (animator == null) return NodeState.FAILURE; 
+            }
+
+            // Jika sedang menunggu di titik patroli
+            if (waitTimer > 0)
+            {
+                waitTimer -= Time.deltaTime;
+                animator.SetFloat("moveX", 0); 
+                animator.SetFloat("moveY", 0);
+                return NodeState.RUNNING; // Masih dalam state patroli (menunggu)
+            }
+
+            float currentSpeed = patrolSpeed;
+            if (myHealth != null) currentSpeed *= myHealth.speedMultiplier;
+
+            // Vector2 directionToTarget = (targetPosition - (Vector2)transform.position).normalized;
+            // if (directionToTarget != Vector2.zero)
+            // {
+            //     float targetAngle = Mathf.Atan2(directionToTarget.y, directionToTarget.x) * Mathf.Rad2Deg - 90f; // Sesuaikan -90 jika sprite hadap atas
+            //     Quaternion targetRotation = Quaternion.Euler(0f, 0f, targetAngle);
+            //     transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            // }
+            
+            // Jika sudah sampai di target
+            if (Vector2.Distance(transform.position, targetPosition) < 0.1f)
+            {
+                waitTimer = waitTime; // Mulai timer tunggu
+                SetNewPatrolTarget(); // Cari target baru untuk nanti
+                animator.SetFloat("moveX", 0); 
+                animator.SetFloat("moveY", 0); 
+                return NodeState.SUCCESS; // Return 'SUCCESS' agar BT bisa re-evaluasi
+            }
+            else
+            {
+                // Bergerak ke target
+                Vector2 direction = (targetPosition - (Vector2)transform.position).normalized; 
+                transform.position = Vector2.MoveTowards(transform.position, targetPosition, currentSpeed * Time.deltaTime);
+                animator.SetFloat("moveX", direction.x); 
+                animator.SetFloat("moveY", direction.y); 
+                return NodeState.RUNNING;
+            }
+        }
+
+        private void SetNewPatrolTarget()
+        {
+            // Coba cari titik valid sebanyak 10 kali
+            for (int i = 0; i < 10; i++)
+            {
+                Vector2 randomPoint = startPosition + Random.insideUnitCircle * patrolRadius;
+
+                RaycastHit2D hit = Physics2D.Linecast(transform.position, randomPoint, obstacleLayer);
+
+                if (hit.collider == null)
+                {
+                    targetPosition = randomPoint;
+                    return; 
+                }
+            }
+
+            targetPosition = transform.position;
+        }
+    }
+}

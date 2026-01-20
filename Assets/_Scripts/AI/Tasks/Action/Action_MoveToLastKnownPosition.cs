@@ -1,0 +1,68 @@
+using UnityEngine;
+using DungeonFlux.AI;
+
+namespace DungeonFlux.Tasks
+{
+    public class Action_MoveToLastKnownPosition : MonoBehaviour
+    {
+        [Header("Movement Settings")]
+        public float investigationSpeed = 2.5f;
+
+        [Header("Rotation")]
+        public float rotationSpeed = 5f;
+
+        private BehaviourTreeRunner btRunner;
+        private Vector2 targetPosition;
+        private bool isMoving = false;
+        private Animator animator;
+        private Health myHealth;
+
+        void Start()
+        {
+            myHealth = GetComponent<Health>();
+            btRunner = GetComponent<BehaviourTreeRunner>();
+            if (btRunner == null)
+            {
+                Debug.LogError($"[{gameObject.name}] Action_MoveToLastKnownPosition memerlukan BehaviourTreeRunner");
+            }
+            animator = GetComponent<Animator>();
+        }
+
+        public NodeState ExecuteTask()
+        {
+            if (btRunner == null) return NodeState.FAILURE;
+
+            if (!isMoving)
+            {
+                targetPosition = btRunner.GetLastKnownPlayerPosition();
+                isMoving = true;
+            }
+
+            float currentSpeed = investigationSpeed;
+            if (myHealth != null) currentSpeed *= myHealth.speedMultiplier;
+
+            if (Vector2.Distance(transform.position, targetPosition) < 0.5f)
+            {
+                isMoving = false;
+                animator.SetFloat("moveX", 0);
+                animator.SetFloat("moveY", 0);
+                Debug.Log($"[{gameObject.name}] Sampai di posisi terakhir pemain terlihat.");
+                return NodeState.SUCCESS;
+            }
+            else
+            {
+
+                Vector2 direction = (targetPosition - (Vector2)transform.position).normalized;
+                transform.position = Vector2.MoveTowards(transform.position, targetPosition, currentSpeed * Time.deltaTime);
+                animator.SetFloat("moveX", direction.x);
+                animator.SetFloat("moveY", direction.y);
+                return NodeState.RUNNING;
+            }
+        }
+
+        public void OnAbort()
+        {
+            isMoving = false;
+        }
+    }
+}

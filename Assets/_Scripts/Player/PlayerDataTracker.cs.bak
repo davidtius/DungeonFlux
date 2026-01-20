@@ -1,0 +1,350 @@
+using UnityEngine;
+
+// Skrip ini HANYA ditempel di Prefab Player
+public class PlayerDataTracker : MonoBehaviour
+{
+    public static PlayerDataTracker Instance { get; private set; }
+
+    // --- Metrik Mentah (sesuai GDD hal 13) ---
+    [Header("Raw Metric Per Floor")]
+    public float timeSpentInFloor = 0f;         // Metrik: Waktu Penyelesaian (detik) [cite: 328]
+    public int totalRoomsInFloor = 0;           // Dihitung oleh LevelGenerator
+    public int roomsVisited = 0;                // Metrik: Tingkat Kunjungan Ruangan [cite: 331]
+    public int totalLootInFloor = 0;            // Dihitung oleh LevelGenerator
+    public int lootFound = 0;                   // Metrik: Tingkat Penemuan Loot [cite: 336]
+    public int damageDealt = 0;                 // Metrik: Total Kerusakan Diberikan [cite: 342]
+    public int offensiveDashes = 0;   
+    public int totalDashes = 0;          // Metrik: Jumlah Dash Ofensif [cite: 343]
+    public int skillsUsed = 0;                  // Metrik: Jumlah Skill Digunakan [cite: 344]
+    public int damageTaken = 0;                 // Metrik: Total Kerusakan Diterima [cite: 347]
+    public float timeSpentIdle = 0f;            // Metrik: Waktu Diam (detik) [cite: 348]
+    public float timeSpentMoving = 0f;          // Metrik: Rasio Bergerak (%) [cite: 329]
+    public int enemiesKilled = 0;   
+    public int secretRoomsFound = 0;  
+    public int shrinesUsed = 0;   
+    public int totalEnemiesInFloor = 0;
+    
+    [Header("Meta Progression")]
+    public int totalEctoplasma = 0;  
+    public int swarmerKilled = 0;
+    public int rangedKilled = 0;
+    public int tankKilled = 0;
+    public int bossKilled = 0;  
+    [HideInInspector] public float totalRunTime = 0f;
+
+    [Header("Total Run Stats (Accumulated)")]
+    public int totalRunDamageDealt = 0;
+    public int totalRunEnemiesKilled = 0;
+    public int totalSwarmerKilled = 0;
+    public int totalRangedKilled = 0;
+    public int totalTankKilled = 0;
+    public int totalBossKilled = 0;
+
+    [Header("Exploration Nuances")]
+    public bool isObjectiveComplete = false;  
+    public bool hasVisitedExitRoom = false;  
+    public float timeSpentAfterObjective = 0f;
+
+    public int shrineHealsTaken = 0;   // Ambil Heal
+    public int shrineDamageTaken = 0;  // Ambil Trade Damage
+
+    // Variabel internal
+    private bool isMoving = false;
+    private Rigidbody2D rb;
+    private bool isTimerPaused = false;
+
+    public void SetTimerPaused(bool paused)
+    {
+        isTimerPaused = paused;
+    }
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+            rb = GetComponent<Rigidbody2D>();
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    void Start()
+    {
+        // Load Ecto dari Save Data saat Tracker baru dibuat
+        if (SaveManager.HasSaveFile())
+        {
+            SaveData data = SaveManager.Load();
+            totalEctoplasma = data.totalEctoplasma;
+            
+            // Update HUD awal
+            if (GameHUDManager.Instance != null)
+            {
+                GameHUDManager.Instance.UpdateEctoplasma(totalEctoplasma);
+            }
+        }
+    }
+
+    void Update()
+    {
+        if (!isTimerPaused)
+        {
+            float dt = Time.deltaTime;
+            timeSpentInFloor += dt;
+            totalRunTime += dt; 
+        }
+
+        // Cek pergerakan (asumsi input WASD)
+        if (rb != null && rb.linearVelocity.magnitude > 0.1f)
+        {
+            isMoving = true;
+        }
+        else
+        {
+            isMoving = false;
+        }
+
+        // Akumulasi Waktu Bergerak / Diam
+        if (isMoving)
+        {
+            timeSpentMoving += Time.deltaTime;
+        }
+        else
+        {
+            timeSpentIdle += Time.deltaTime;
+        }
+
+        // Panggil fungsi-fungsi Record baru Anda di sini
+        // Contoh:
+        // if (Input.GetKeyDown(KeyCode.Space)) // (Tombol Dash Anda)
+        // {
+        //     RecordOffensiveDash(); // (Perlu logika untuk cek jika ini dash ke arah musuh)
+        // }
+        // if (Input.GetKeyDown(KeyCode.Q)) // (Tombol Skill Anda)
+        // {
+        //     RecordSkillUse();
+        // }
+
+        if (GameHUDManager.Instance != null)
+        {
+            // Format string kills
+            string kills = $"S:{totalSwarmerKilled} R:{totalRangedKilled} T:{totalTankKilled} B:{totalBossKilled}";
+            
+            GameHUDManager.Instance.UpdateTrackerStats(
+                totalRunTime,
+                damageDealt,      
+                totalEctoplasma,  
+                kills
+            );
+        }
+
+        if (isObjectiveComplete && !isTimerPaused)
+        {
+            timeSpentAfterObjective += Time.deltaTime;
+        }
+    }
+
+    // --- Fungsi Pencatatan ( dipanggil skrip lain) ---
+
+    public void RecordShrineDecision(bool isHeal)
+    {
+        shrinesUsed++; // Total interaksi nambah (Untuk Explorer)
+        if (isHeal) 
+            shrineHealsTaken++;   // Nambah Passive
+        else 
+            shrineDamageTaken++;  // Nambah Aggressive
+    }
+
+    public void SetObjectiveComplete()
+    {
+        isObjectiveComplete = true;
+        Debug.Log("Tracker: Objective Complete! Mulai menghitung waktu eksplorasi tambahan...");
+    }
+
+    // Panggil dari Health.cs Musuh saat mati
+    public void RecordEnemyKill()
+    {
+        enemiesKilled++;
+    }
+
+    public void RecordSecretRoomFound()
+    {
+        secretRoomsFound++;
+        Debug.Log("DDA Tracker: Secret Room Found!");
+    }
+
+    // Panggil dari Health.cs Player saat kena damage
+    public void RecordDamageTaken(int amount)
+    {
+        damageTaken += amount;
+    }
+    
+    // Panggil dari skrip PlayerAttack saat berhasil melukai musuh
+    public void RecordDamageDealt(int amount)
+    {
+        damageDealt += amount;
+        totalRunDamageDealt += amount;
+    }
+
+    // Panggil dari skrip PlayerMovement saat melakukan Dash
+    public void RecordOffensiveDash()
+    {
+        // (Logika GDD [cite: 343] butuh ini "ke arah musuh". 
+        // Untuk V1, kita catat semua dash dulu)
+        offensiveDashes++;
+    }
+
+    // Panggil dari skrip PlayerSkill saat skill dipakai
+    public void RecordSkillUse()
+    {
+        skillsUsed++;
+    }
+
+    // Panggil dari skrip Loot/Peti saat diambil
+    public void RecordLootFound()
+    {
+        lootFound++;
+    }
+    
+    // Panggil dari trigger di setiap ruangan saat pemain masuk
+    public void RecordRoomVisited()
+    {
+        roomsVisited++;
+    }
+
+    // Panggil oleh LevelGenerator saat membuat lantai
+    public void SetFloorTotals(int totalRooms, int totalLoot)
+    {
+        this.totalRoomsInFloor = totalRooms;
+        this.totalLootInFloor = totalLoot;
+    }
+
+    // Panggil oleh DDAManager saat pindah lantai
+    public void ResetFloorStats()
+    {
+        timeSpentInFloor = 0f;
+        roomsVisited = 0;
+        lootFound = 0;
+        damageDealt = 0;
+        offensiveDashes = 0;
+        skillsUsed = 0;
+        damageTaken = 0;
+        timeSpentIdle = 0f;
+        timeSpentMoving = 0f;
+        enemiesKilled = 0;
+        swarmerKilled = 0;
+        rangedKilled = 0;
+        tankKilled = 0;
+        bossKilled = 0;
+        shrinesUsed = 0;
+        totalDashes = 0;
+
+        isObjectiveComplete = false;
+        hasVisitedExitRoom = false;
+        timeSpentAfterObjective = 0f;
+        shrineHealsTaken = 0;
+        shrineDamageTaken = 0;
+        
+        totalRoomsInFloor = 0;
+        totalLootInFloor = 0;
+        Debug.Log("PlayerDataTracker: Statistik lantai di-reset.");
+    }
+
+    public void StartNewFloor(int totalRooms)
+    {
+        ResetFloorStats(); // Reset semua metrik lama
+        totalRoomsInFloor = totalRooms; // Set target baru
+        Debug.Log($"DDA Tracker: Lantai Baru Dimulai. Total Ruangan yang bisa dikunjungi: {totalRooms}");
+    }
+
+    public float GetExplorerScore()
+    {
+        // 1. Ratio Kunjungan Ruangan (0.0 - 1.0)
+        float roomVisitRatio = 0f;
+        if (totalRoomsInFloor > 0)
+            roomVisitRatio = (float)roomsVisited / totalRoomsInFloor;
+
+        // 2. Ratio Loot (0.0 - 1.0)
+        float lootFoundRatio = 0f;
+        if (totalLootInFloor > 0)
+            lootFoundRatio = (float)lootFound / totalLootInFloor;
+
+        // 3. Ratio Secret Room (0.0 atau 1.0)
+        // (Asumsi: Biasanya cuma ada 1 secret room per lantai. Jika ketemu = 100%)
+        float secretRatio = (secretRoomsFound > 0) ? 1.0f : 0f;
+
+        // --- RUMUS BARU ---
+        // 50% Kunjungan, 30% Loot, 20% Secret Room
+        float score = (0.5f * roomVisitRatio) + (0.3f * lootFoundRatio) + (0.2f * secretRatio);
+        
+        return score;
+    }
+
+    public void RecordSpecificKill(Health.EnemyVariant variant, Health.CharacterType mainType)
+    {
+        enemiesKilled++; // Total umum tetap nambah
+        totalRunEnemiesKilled++;
+
+        if (mainType == Health.CharacterType.Boss)
+        {
+            bossKilled++;
+            totalBossKilled++;
+        }
+        else
+        {
+            switch (variant)
+            {
+                case Health.EnemyVariant.Swarmer: swarmerKilled++; totalSwarmerKilled++; break;
+                case Health.EnemyVariant.Ranged: rangedKilled++; totalRangedKilled++; break;
+                case Health.EnemyVariant.Tank: tankKilled++; totalTankKilled++; break;
+            }
+        }
+    }
+
+    public void AddEctoplasma(int amount)
+    {
+        totalEctoplasma += amount;
+        // Debug.Log($"Dapat {amount} Ecto. Total: {totalEctoplasma}");
+
+        // Update UI
+        if (GameHUDManager.Instance != null)
+        {
+            string kills = $"S:{totalSwarmerKilled} R:{totalRangedKilled} T:{totalTankKilled} B:{totalBossKilled}";
+            GameHUDManager.Instance.UpdateTrackerStats(timeSpentInFloor, damageDealt, totalEctoplasma, kills);
+        }
+    }
+
+    public void StartNewFloor(int totalRooms, int totalLoot, int totalEnemies)
+    {
+        ResetFloorStats();
+        
+        this.totalRoomsInFloor = totalRooms;
+        this.totalLootInFloor = totalLoot; // <-- Simpan Total Loot
+        this.totalEnemiesInFloor = totalEnemies;
+        
+        Debug.Log($"DDA Tracker: Lantai Baru. Target: {totalRooms} Ruangan, {totalLoot} Loot Item.");
+    }
+
+    public void RecordShrineUse()
+    {
+        shrinesUsed++;
+        // Debug.Log("DDA Tracker: Shrine Used!");
+    }
+
+    public void RecordExitRoomFound()
+    {
+        if (!hasVisitedExitRoom)
+        {
+            hasVisitedExitRoom = true;
+            Debug.Log("Tracker: Pemain menemukan Ruang Exit!");
+        }
+    }
+
+    public void RecordDash()
+    {
+        totalDashes++;
+    }
+}

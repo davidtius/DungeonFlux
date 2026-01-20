@@ -1,0 +1,53 @@
+using UnityEngine;
+using DungeonFlux.AI;
+
+namespace DungeonFlux.Tasks
+{
+    public class Condition_IsTargetedByPlayer : MonoBehaviour
+    {
+        [Header("Targeting Check")]
+        public string playerTag = "Player";
+        public float targetingAngleThreshold = 15f; 
+
+        private Transform playerTransform;
+        private PlayerController playerController; 
+
+        void Start()
+        {
+            GameObject playerObj = GameObject.FindGameObjectWithTag(playerTag);
+            if (playerObj != null)
+            {
+                playerTransform = playerObj.transform;
+                playerController = playerObj.GetComponent<PlayerController>();
+            }
+        }
+
+        public NodeState Check()
+        {
+            if (playerTransform == null || playerController == null)
+            {
+                return NodeState.FAILURE; 
+            }
+
+            // Ambil arah bidik pemain (misal dari rotasi firepoint)
+            Vector2 playerAimDirection = playerController.GetAimDirection(); 
+
+            // Hitung arah dari pemain ke AI
+            Vector2 directionFromPlayerToAI = (transform.position - playerTransform.position).normalized;
+
+            // Hitung sudut antara arah bidik pemain dan arah ke AI
+            float angle = Vector2.Angle(playerAimDirection, directionFromPlayerToAI);
+
+            // Cek apakah sudutnya cukup kecil (pemain membidik ke arah AI)
+            if (angle <= targetingAngleThreshold)
+            {
+                Debug.Log($"[{gameObject.name}] Sedang dibidik Player");
+                return NodeState.SUCCESS; 
+            }
+            else
+            {
+                return NodeState.FAILURE; 
+            }
+        }
+    }
+}

@@ -1,0 +1,55 @@
+
+using UnityEngine;
+using DungeonFlux.AI; 
+
+namespace DungeonFlux.Tasks
+{
+    public class Condition_IsPlayerInSight : MonoBehaviour
+    {
+        [Header("Player Detection")]
+        public string playerTag = "Player";
+        public float detectionRadius = 8f;
+        public LayerMask obstacleLayer;
+
+        private Transform playerTransform;
+
+        public NodeState Check()
+        {
+            //Mencari Player
+            if (playerTransform == null)
+            {
+                GameObject playerObj = GameObject.FindGameObjectWithTag(playerTag);
+                if (playerObj != null)
+                {
+                    playerTransform = playerObj.transform;
+                }
+                else
+                {
+                    // Player mati atau belum spawn
+                    return NodeState.FAILURE;
+                }
+            }
+
+            //Cek Jarak
+            if (Vector2.Distance(transform.position, playerTransform.position) > detectionRadius)
+            {
+                return NodeState.FAILURE; // Player di luar jangkauan
+            }
+
+            //Cek Line of Sight
+            Vector2 directionToPlayer = (playerTransform.position - transform.position).normalized;
+            RaycastHit2D hit = Physics2D.Raycast(transform.position, directionToPlayer, detectionRadius, obstacleLayer);
+
+            if (hit.collider != null)
+            {
+                // Ada dinding di antara AI dan player
+                return NodeState.FAILURE;
+            }
+
+            // Jika lolos semua cek: Player terlihat
+            return NodeState.SUCCESS;
+        }
+
+        public Transform getPlayerTransform() {return playerTransform;}
+    }
+}

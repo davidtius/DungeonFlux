@@ -1,0 +1,361 @@
+using UnityEngine;
+using System.Collections.Generic;
+
+public enum PlayerProfile
+{
+    Aggressive,
+    Passive,
+    Explorer,
+    Speedrunner
+}
+
+public class DDAManager : MonoBehaviour
+{
+    [Header("Item Database")]
+
+    public List<PlayerController.LootData> allGameItems;
+
+    public static DDAManager Instance { get; private set; }
+
+    private LevelGenerator levelGenerator;
+
+    private Dictionary<PlayerProfile, float> profileScoresEMA = new Dictionary<PlayerProfile, float>
+    {
+        { PlayerProfile.Aggressive, 0f },
+        { PlayerProfile.Passive, 0f },
+        { PlayerProfile.Explorer, 0f },
+        { PlayerProfile.Speedrunner, 0f }
+    };
+
+    [Header("Batas Normalisasi")]
+    public float maxExpectedTime = 240f;
+    public float maxExpectedDamageDealt = 400f;
+    public float maxExpectedOffensiveDashes = 10f;
+    public float maxExpectedSkillsUsed = 5f;
+    public float maxExpectedDamageTaken = 60f;
+    public float maxExpectedIdleTime = 45f;
+    public float maxExpectedShrines = 2f;
+    public float maxExpectedSecrets = 1f;
+    public float maxExpectedDashes = 40f;
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    public void RegisterLevelGenerator(LevelGenerator generator)
+    {
+        this.levelGenerator = generator;
+        Debug.Log("DDAManager: LevelGenerator baru terdaftar. Memulai Loading...");
+
+        LoadDDAData();
+
+        ApplyDominantProfileToGenerator();
+    }
+
+    private void ApplyDominantProfileToGenerator()
+    {
+        if (levelGenerator == null) return;
+
+        PlayerProfile dominantProfile = PlayerProfile.Passive;
+        float maxScore = -1f;
+
+        foreach (var pair in profileScoresEMA)
+        {
+            if (pair.Value > maxScore)
+            {
+                maxScore = pair.Value;
+                dominantProfile = pair.Key;
+            }
+        }
+
+        Debug.Log($"DDAManager: Mengembalikan profil tersimpan ke Generator: {dominantProfile} (Skor: {maxScore:F2})");
+        levelGenerator.SetNextFloorProfile(dominantProfile);
+    }
+
+    private float Normalize(float value, float maxValue)
+    {
+        if (maxValue == 0) return 0;
+
+        return Mathf.Clamp01(value / maxValue);
+    }
+
+    public void SaveDDAData()
+    {
+       SaveData data = SaveManager.HasSaveFile() ? SaveManager.Load() : new SaveData();
+
+        data.ema_Aggressive = profileScoresEMA[PlayerProfile.Aggressive];
+        data.ema_Passive = profileScoresEMA[PlayerProfile.Passive];
+        data.ema_Explorer = profileScoresEMA[PlayerProfile.Explorer];
+        data.ema_Speedrunner = profileScoresEMA[PlayerProfile.Speedrunner];
+
+        if (levelGenerator != null)
+        {
+            data.biomeOrder = levelGenerator.GetBiomeOrder();
+            data.currentFloor = levelGenerator.GetCurrentFloor();
+        }
+
+        if (PlayerDataTracker.Instance != null)
+       {
+           Debug.Log("Saving Ectoplasma.");
+           data.totalEctoplasma = PlayerDataTracker.Instance.totalEctoplasma;
+       }
+
+       SaveManager.Save(data);
+    }
+
+    public void LoadDDAData()
+    {
+
+        if (!SaveManager.HasSaveFile())
+        {
+            Debug.Log("Save file tidak ditemukan. Memulai dengan DDA Default (Passive).");
+
+            ResetToDefaults();
+
+            if (levelGenerator != null)
+            {
+                levelGenerator.RandomizeBiomeOrder();
+                levelGenerator.GenerateNewRun();
+                SaveDDAData();
+            }
+
+            return;
+        }
+
+        SaveData data = SaveManager.Load();
+
+        profileScoresEMA[PlayerProfile.Aggressive] = data.ema_Aggressive;
+        profileScoresEMA[PlayerProfile.Passive] = data.ema_Passive;
+        profileScoresEMA[PlayerProfile.Explorer] = data.ema_Explorer;
+        profileScoresEMA[PlayerProfile.Speedrunner] = data.ema_Speedrunner;
+
+        if (levelGenerator != null)
+        {
+            levelGenerator.SetBiomeOrder(data.biomeOrder);
+            levelGenerator.SetCurrentFloor(data.currentFloor);
+            levelGenerator.GenerateLevel();
+        }
+
+        Debug.Log("DDAManager: Data profil pemain berhasil di-load.");
+    }
+
+    private void ResetToDefaults()
+    {
+
+        profileScoresEMA[PlayerProfile.Aggressive] = 0f;
+        profileScoresEMA[PlayerProfile.Passive] = 0f;
+        profileScoresEMA[PlayerProfile.Explorer] = 0f;
+        profileScoresEMA[PlayerProfile.Speedrunner] = 0f;
+
+    }
+
+    public void AnalyzeAndPrepareNextFloor()
+    {
+        if (PlayerDataTracker.Instance == null) return;
+        PlayerDataTracker tracker = PlayerDataTracker.Instance;
+
+        float totalFloorTime = Mathf.Max(tracker.timeSpentInFloor, 1.0f);
+        float norm_waktu_selesai = Normalize(tracker.timeSpentInFloor, maxExpectedTime);
+
+        float avgTimePerRoom = 0f;
+        if (tracker.roomsVisited > 0)
+            avgTimePerRoom = tracker.totalRoomDwellTime / tracker.roomsVisited;
+
+        float roomTimeRatio = Mathf.Clamp01(tracker.totalRoomDwellTime / totalFloorTime);
+        float norm_damage_dealt = Normalize(tracker.damageDealt, maxExpectedDamageDealt);
+        float norm_damage_taken = Normalize(tracker.damageTaken, maxExpectedDamageTaken);
+        float healthSafetyScore = 1.0f - norm_damage_taken;
+
+        float enemiesAlive = Mathf.Max(0, tracker.totalEnemiesInFloor - tracker.enemiesKilled);
+        float killRatio = 0f;
+        if (tracker.totalEnemiesInFloor > 0)
+            killRatio = (float)tracker.enemiesKilled / tracker.totalEnemiesInFloor;
+
+        float enemiesAliveRatio = 1.0f - killRatio;
+
+        float avgCombatKillInterval = tracker.GetAverageCombatKillTime();
+
+        float weightedKillScore = (tracker.swarmerKilled * 1f) +
+                                  (tracker.rangedKilled * 1.5f) +
+                                  (tracker.tankKilled * 3f) +
+                                  (tracker.bossKilled * 10f);
+        float dynamicMaxKillScore = Mathf.Max(tracker.totalEnemiesInFloor * 1.5f, 10f);
+        float norm_weighted_kills = Normalize(weightedKillScore, dynamicMaxKillScore);
+
+        float nonOffensiveDashes = Mathf.Max(0, tracker.totalDashes - tracker.offensiveDashes);
+        float offensiveDashRatio = (tracker.totalDashes > 0) ? ((float)tracker.offensiveDashes / tracker.totalDashes) : 0;
+        float norm_skills = Normalize(tracker.skillsUsed, maxExpectedSkillsUsed);
+
+        float norm_shrine_risk = Normalize(tracker.shrineDamageTaken, 2f);
+        float norm_shrine_heal = Normalize(tracker.shrineHealsTaken, 2f);
+        float norm_interaction = Normalize(tracker.shrinesUsed + tracker.secretRoomsFound, maxExpectedShrines + maxExpectedSecrets);
+        float visitRatio = (tracker.totalRoomsInFloor > 0) ? ((float)tracker.roomsVisited / tracker.totalRoomsInFloor) : 0;
+        visitRatio = Mathf.Clamp01(visitRatio);
+        Debug.Log("tracker.totalRoomsInFloor: " + tracker.totalRoomsInFloor);
+
+        float score_speedrunner = (0.5f * (1.0f - norm_waktu_selesai)) +
+                                  (0.3f * Normalize(nonOffensiveDashes, maxExpectedDashes)) +
+                                  (0.2f * (1.0f - visitRatio));
+
+        float lingerBonus = (tracker.timeSpentAfterObjective > 10f) ? 0.2f : 0f;
+        float score_explorer = (0.45f * visitRatio) +
+                               (0.2f * Normalize(tracker.lootFound, 10)) +
+                               (0.1f * Normalize(tracker.secretRoomsFound, maxExpectedSecrets)) +
+                               (0.1f * norm_interaction) +
+                               (0.15f * lingerBonus) -
+                               (0.3f * offensiveDashRatio);
+
+        float score_aggressive = (0.15f * norm_damage_dealt) +
+                                 (0.20f * norm_weighted_kills) +
+                                 (0.30f * offensiveDashRatio) +
+                                 (0.25f * norm_skills) +
+                                 (0.10f * norm_shrine_risk) -
+                                 (0.4f * visitRatio);
+
+        float score_passive = (0.2f * healthSafetyScore) +
+                              (0.3f * Normalize(tracker.timeSpentIdle, maxExpectedIdleTime)) +
+                              (0.3f * enemiesAliveRatio) +
+                              (0.2f * norm_shrine_heal) -
+                              (0.5f * visitRatio);
+
+        float timeDamageGap = norm_waktu_selesai - norm_damage_dealt;
+
+        Debug.Log($"[DDA ANALYSIS] TimeNorm: {norm_waktu_selesai:F2}, DmgNorm: {norm_damage_dealt:F2}, OffDashRatio:{offensiveDashRatio:F2}, Vis:{visitRatio:F2}, KillW:{norm_weighted_kills:F2}, Pace:{avgCombatKillInterval:F1}s, RoomTime:{roomTimeRatio:F2}");
+
+        if (norm_waktu_selesai < 0.45f &&
+            norm_damage_dealt < 0.45f &&
+            visitRatio < 0.6f &&
+            nonOffensiveDashes > 5 &&
+            killRatio < 0.4f &&
+            avgCombatKillInterval > 2.5f)
+        {
+            score_speedrunner += 0.9f;
+            score_explorer -= 0.5f;
+            score_passive -= 0.5f;
+            Debug.Log("DDA Decision: SPEEDRUNNER. (Rush Mode).");
+        }
+
+        bool isNormalAggro = (norm_damage_dealt > 0.7f || norm_weighted_kills > 0.6f) &&
+                             killRatio > 0.6f &&
+                             avgCombatKillInterval < 2.5f &&
+                             (offensiveDashRatio > 0.2f || norm_skills > 0.3f || norm_shrine_risk > 0.1) &&
+                             visitRatio < 0.85f;
+
+        bool isBlitzAggro = norm_waktu_selesai < 0.5f &&
+                            avgCombatKillInterval < 2.5f &&
+                            killRatio > 0.25f;
+
+        if (isNormalAggro || isBlitzAggro)
+        {
+            score_aggressive += 0.95f;
+            score_explorer -= 0.8f;
+            score_speedrunner -= 0.6f;
+            Debug.Log("DDA Decision: AGGRESSIVE. (Combat Focused + Offensive Moves).");
+            if (isBlitzAggro) Debug.Log(">> Aggressive Criteria Met (BLITZKRIEG MODE).");
+            else Debug.Log(">> Aggressive Criteria Met (Normal).");
+        }
+
+        Debug.Log($"[EXPLORER DEBUG] Visit: {visitRatio:F2} (Target >0.9), " +
+                  $"KillInterval: {avgCombatKillInterval:F1} (Target >4.0), " +
+                  $"RoomTimeRatio: {roomTimeRatio:F2} (Target >0.5), " +
+                  $"AvgTimeRoom: {avgTimePerRoom:F1} (Target >3.0)");
+
+        if ((visitRatio >= 0.90f &&
+             killRatio >= 0.5f &&
+             avgCombatKillInterval >= 2.5f &&
+             avgTimePerRoom > 3.0f &&
+             roomTimeRatio > 0.4f &&
+             offensiveDashRatio < 0.25f &&
+             healthSafetyScore > 0.4f &&
+             norm_waktu_selesai > 0.45f) ||
+            (tracker.timeSpentAfterObjective > 15f && Normalize(tracker.timeSpentIdle, maxExpectedIdleTime) < 0.3f))
+        {
+            score_explorer += 0.9f;
+            score_passive -= 0.3f;
+            Debug.Log($"DDA Decision: EXPLORER. (Detailed Search, Low Aggression).");
+        }
+
+        if ((healthSafetyScore > 0.7f || norm_shrine_heal > 0) &&
+                 (roomTimeRatio < 0.4f || (avgTimePerRoom > 15f && norm_damage_dealt < 0.3f)) &&
+                 enemiesAliveRatio > 0.4f &&
+                 killRatio < 0.5f)
+        {
+            score_passive += 0.8f;
+            Debug.Log("DDA Decision: PASSIVE. (Safety/Hiding).");
+        }
+
+        if (tracker.totalRunEnemiesKilled > 50 || tracker.totalRunDamageDealt > 2000)
+        {
+            score_aggressive += 0.1f;
+        }
+
+        score_explorer = Mathf.Clamp01(score_explorer);
+        score_passive = Mathf.Clamp01(score_passive);
+        score_aggressive = Mathf.Clamp01(score_aggressive);
+        score_speedrunner = Mathf.Clamp01(score_speedrunner);
+
+        profileScoresEMA[PlayerProfile.Speedrunner] = (0.6f * score_speedrunner) + (0.4f * profileScoresEMA[PlayerProfile.Speedrunner]);
+        profileScoresEMA[PlayerProfile.Explorer] = (0.6f * score_explorer) + (0.4f * profileScoresEMA[PlayerProfile.Explorer]);
+        profileScoresEMA[PlayerProfile.Aggressive] = (0.6f * score_aggressive) + (0.4f * profileScoresEMA[PlayerProfile.Aggressive]);
+        profileScoresEMA[PlayerProfile.Passive] = (0.6f * score_passive) + (0.4f * profileScoresEMA[PlayerProfile.Passive]);
+
+        PlayerProfile dominantProfile = PlayerProfile.Passive;
+        float maxScore = -1f;
+
+        foreach (var pair in profileScoresEMA)
+        {
+            if (pair.Value > maxScore)
+            {
+                maxScore = pair.Value;
+                dominantProfile = pair.Key;
+            }
+        }
+
+        Debug.Log($"DDA FINAL RESULT: {dominantProfile} (Skor: {maxScore:F2})");
+
+        SaveDDAData();
+        if (levelGenerator != null) levelGenerator.SetNextFloorProfile(dominantProfile);
+
+        tracker.ResetFloorStats();
+    }
+
+    public PlayerController.LootData GetItemByName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+
+        foreach (var item in allGameItems)
+        {
+            if (item.itemName == name)
+            {
+                return item;
+            }
+        }
+        Debug.LogWarning($"Item dengan nama '{name}' tidak ditemukan di Database DDAManager!");
+        return null;
+    }
+
+    public string GetCurrentProfileName()
+    {
+        PlayerProfile dominantProfile = PlayerProfile.Passive;
+        float maxScore = -1f;
+
+        foreach (var pair in profileScoresEMA)
+        {
+            if (pair.Value > maxScore)
+            {
+                maxScore = pair.Value;
+                dominantProfile = pair.Key;
+            }
+        }
+        return dominantProfile.ToString();
+    }
+}

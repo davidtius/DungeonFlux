@@ -1,0 +1,61 @@
+using UnityEngine;
+using DungeonFlux.AI;
+
+namespace DungeonFlux.Tasks
+{
+    public class Action_Flee : MonoBehaviour
+    {
+        [Header("Flee Logic")]
+        public string playerTag = "Player";
+        public float fleeSpeed = 5f;
+        
+        [Header("Rotation")]
+        public float rotationSpeed = 5f;
+
+        private Transform playerTransform;
+        private Animator animator;
+        private Health myHealth;
+
+        void Start()
+        {
+            myHealth = GetComponent<Health>();
+            GameObject playerObj = GameObject.FindGameObjectWithTag(playerTag);
+            if (playerObj != null)
+            {
+                playerTransform = playerObj.transform;
+            }
+            animator = GetComponent<Animator>();
+        }
+
+        public NodeState ExecuteTask()
+        {
+            if (playerTransform == null)
+            {
+                animator.SetFloat("moveX", 0); 
+                animator.SetFloat("moveY", 0);
+                return NodeState.FAILURE; // Tidak bisa lari jika tidak ada target
+            }
+
+            // Logika lari (arah berlawanan dari player)
+            float currentSpeed = fleeSpeed;
+            if (myHealth != null) currentSpeed *= myHealth.speedMultiplier;
+
+            Vector2 fleeDirection = (transform.position - playerTransform.position).normalized;
+            transform.position = Vector2.MoveTowards(transform.position, transform.position + (Vector3)fleeDirection, currentSpeed * Time.deltaTime);
+
+            animator.SetFloat("moveX", fleeDirection.x); 
+            animator.SetFloat("moveY", fleeDirection.y);
+
+            // // Logika Rotasi
+            // if (fleeDirection != Vector2.zero)
+            // {
+            //     // Arah lari = arah menjauh dari player
+            //     float targetAngle = Mathf.Atan2(fleeDirection.y, fleeDirection.x) * Mathf.Rad2Deg - 90f; // Sesuaikan -90
+            //     Quaternion targetRotation = Quaternion.Euler(0f, 0f, targetAngle);
+            //     transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            // }
+            
+            return NodeState.RUNNING; // Terus lari
+        }
+    }
+}

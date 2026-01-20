@@ -1,0 +1,205 @@
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using UnityEngine.InputSystem;
+
+public class SanctuaryShop : MonoBehaviour
+{
+    [Header("Audio Settings")]
+    public AudioSource sfxSource;
+    public AudioClip clickSound;
+    public AudioClip hoverSound;
+
+    [Header("UI")]
+    public GameObject shopPanel;
+    public TextMeshProUGUI hpText, dmgText, spdText, lightText;
+
+    [Header("UI Button References")]
+    public Button btnHP;
+    public Button btnDmg;
+    public Button btnSpd;
+    public Button btnLight;
+
+    [Header("Interaction")]
+    public GameObject promptE;
+    private bool inRange;
+    private SaveData data;
+
+    private int baseCostHP = 150;
+    private int baseCostSpd = 120;
+    private int baseCostLight = 100;
+    private int baseCostDmg = 300;
+
+    private int incCostHP = 75;
+    private int incCostDmg = 150;
+    private int incCostSpd = 60;
+    private int incCostLight = 50;
+
+    void Start()
+    {
+        shopPanel.SetActive(false);
+        if(promptE) promptE.SetActive(false);
+        data = SaveManager.HasSaveFile() ? SaveManager.Load() : new SaveData();
+
+        if (data.lastSceneName != "Sanctuary")
+        {
+            data.lastSceneName = "Sanctuary";
+            SaveManager.Save(data);
+            Debug.Log("Game Saved: Location updated to Sanctuary");
+        }
+
+        UpdateUI();
+        StartCoroutine(SyncHUDWhenReady());
+    }
+
+    System.Collections.IEnumerator SyncHUDWhenReady()
+    {
+
+        yield return new WaitUntil(() => GameHUDManager.Instance != null);
+
+        GameHUDManager.Instance.UpdateEctoplasma(data.totalEctoplasma);
+
+        GameHUDManager.Instance.UpdateLevelInfo("Sanctuary", 0, data.currentFloor);
+    }
+
+    public void Interact()
+    {
+        ToggleShop();
+    }
+
+    void UpdateUI()
+    {
+        int p_hp = baseCostHP + (data.healthLevel * incCostHP);
+        int p_dmg = baseCostDmg + (data.damageLevel * incCostDmg);
+        int p_spd = baseCostSpd + (data.speedLevel * incCostSpd);
+        int p_light = baseCostLight + (data.lightLevel * incCostLight);
+
+        if (hpText) hpText.text = $"HP (Lvl {data.healthLevel})\nCost: {p_hp}";
+        if (dmgText) dmgText.text = $"Damage (Lvl {data.damageLevel})\nCost: {p_dmg}";
+        if (spdText) spdText.text = $"Speed (Lvl {data.speedLevel})\nCost: {p_spd}";
+        if (lightText) lightText.text = $"Light Rad (Lvl {data.lightLevel})\nCost: {p_light}";
+
+        if (btnHP) btnHP.interactable = (data.totalEctoplasma >= p_hp);
+        if (btnDmg) btnDmg.interactable = (data.totalEctoplasma >= p_dmg);
+        if (btnSpd) btnSpd.interactable = (data.totalEctoplasma >= p_spd);
+        if (btnLight) btnLight.interactable = (data.totalEctoplasma >= p_light);
+    }
+
+    public void BuyHP() { BuyStat("HP", ref data.healthLevel, baseCostHP, incCostHP); }
+    public void BuyDmg() { BuyStat("Dmg", ref data.damageLevel, baseCostDmg, incCostDmg); }
+    public void BuySpd() { BuyStat("Spd", ref data.speedLevel, baseCostSpd, incCostSpd); }
+    public void BuyLight() { BuyStat("Light", ref data.lightLevel, baseCostLight, incCostLight); }
+
+    void BuyStat(string type, ref int level, int baseCost, int increment)
+    {
+        int price = baseCost + (level * increment);
+        if (data.totalEctoplasma >= price)
+        {
+            data.totalEctoplasma -= price;
+            level++;
+
+            if (PlayerDataTracker.Instance != null)
+                PlayerDataTracker.Instance.totalEctoplasma = data.totalEctoplasma;
+
+            SaveManager.Save(data);
+            UpdateUI();
+
+            if (GameHUDManager.Instance != null)
+                GameHUDManager.Instance.UpdateEctoplasma(data.totalEctoplasma);
+
+            ApplyUpgradeToPlayer(type);
+            PlayClickSFX();
+        }
+        else
+        {
+            Debug.Log("Uang tidak cukup!");
+        }
+    }
+
+    void ApplyUpgradeToPlayer(string type)
+    {
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+        {
+            PlayerController pc = player.GetComponent<PlayerController>();
+            Health ph = player.GetComponent<Health>();
+
+            if (type == "Dmg" && pc != null)
+            {
+                pc.PermanentUpgradeDamage(1);
+            }
+            else
+            {
+
+                if (pc != null) pc.UpdateStatsFromSave();
+                if (ph != null) ph.UpdateStatsFromSave();
+            }
+        }
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            inRange = true;
+            if (promptE) promptE.SetActive(true);
+
+            PlayerController pc = other.GetComponent<PlayerController>();
+            if (pc != null) pc.SetCurrentShop(this);
+        }
+    }
+
+    void OnTriggerExit2D(Collider2D other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            inRange = false;
+            if (promptE) promptE.SetActive(false);
+            if (shopPanel != null && shopPanel.activeSelf)
+            {
+                ToggleShop();
+            }
+
+            PlayerController pc = other.GetComponent<PlayerController>();
+            if (pc != null) pc.SetCurrentShop(null);
+        }
+    }
+
+    public void CloseShop()
+    {
+        ToggleShop();
+        shopPanel.SetActive(false);
+    }
+
+    void ToggleShop()
+    {
+        if (shopPanel == null) return;
+
+        bool isActive = !shopPanel.activeSelf;
+        shopPanel.SetActive(isActive);
+
+        if (isActive)
+        {
+            UpdateUI();
+            PlayClickSFX();
+            Time.timeScale = 0f;
+        }
+        else
+        {
+            PlayClickSFX();
+            Time.timeScale = 1f;
+        }
+    }
+
+    public void PlayClickSFX()
+    {
+        if (sfxSource != null && clickSound != null)
+            sfxSource.PlayOneShot(clickSound);
+    }
+
+    public void PlayHoverSFX()
+    {
+        if (sfxSource != null && hoverSound != null)
+            sfxSource.PlayOneShot(hoverSound);
+    }
+}

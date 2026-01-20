@@ -1,0 +1,93 @@
+using UnityEngine;
+using DungeonFlux.AI; 
+
+namespace DungeonFlux.Tasks
+{
+    // Tambahkan RequireComponent ini agar ada di prefab
+    [RequireComponent(typeof(Health))]
+    [RequireComponent(typeof(Action_AttackMelee))] // Asumsi dia pakai serangan melee
+    public class Action_BossSwarmer_ChaseAndRest : MonoBehaviour
+    {
+        [Header("Boss Stats")]
+        public float chaseSpeed = 7f;  // Sangat cepat
+        public float restSpeed = 1f;   // Sangat lambat saat "capek"
+        public float chaseDuration = 5f; 
+        public float restDuration = 3f;  
+        public float attackRange = 1.5f;
+
+        [Header("Rotation")]
+        public float rotationSpeed = 5f;
+
+        private Transform playerTransform;
+        private float timer;
+        private bool isResting; 
+        private Health health; // Ambil referensi Health untuk scaling damage
+        private Action_AttackMelee task_AttackMelee; // Ambil referensi skrip serang
+
+        void Start()
+        {
+            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
+            if (playerObj != null) playerTransform = playerObj.transform;
+            health = GetComponent<Health>();
+            task_AttackMelee = GetComponent<Action_AttackMelee>();
+            timer = chaseDuration; 
+            isResting = false;
+        }
+
+        public NodeState ExecuteTask()
+        {
+            if (playerTransform == null || task_AttackMelee == null) return NodeState.FAILURE;
+
+            timer -= Time.deltaTime;
+            float currentSpeed = isResting ? restSpeed : chaseSpeed;
+            float distance = Vector2.Distance(transform.position, playerTransform.position);
+
+            // 1. Logika Serang (Prioritas tertinggi jika dalam jangkauan)
+            if (distance <= attackRange)
+            {
+                // Gunakan skrip serangan yang sudah ada
+                // Kita perlu memodifikasi Action_AttackMelee agar bisa menerima damage multiplier
+                // Untuk sekarang, kita panggil saja ExecuteTask-nya
+                task_AttackMelee.ExecuteTask(); 
+            }
+            else
+            {
+                // 2. Logika Bergerak (Mengejar atau Istirahat)
+                transform.position = Vector2.MoveTowards(transform.position, playerTransform.position, currentSpeed * Time.deltaTime);
+            }
+
+            // 3. Logika State Cepat/Capek
+            if (isResting)
+            {
+                if (timer <= 0) // Waktu istirahat selesai
+                {
+                    isResting = false;
+                    timer = chaseDuration;
+                }
+            }
+            else // Sedang mengejar
+            {
+                if (timer <= 0) // Waktu kejar habis
+                {
+                    isResting = true;
+                    timer = restDuration;
+                }
+            }
+            
+            // 4. Logika Rotasi
+            // RotateTowardsPlayer();
+            return NodeState.RUNNING;
+        }
+        
+        // void RotateTowardsPlayer()
+        // {
+        //     Vector2 direction = (playerTransform.position - transform.position).normalized;
+        //     if (direction != Vector2.zero)
+        //     {
+        //         float targetAngle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
+        //         Quaternion targetRotation = Quaternion.Euler(0f, 0f, targetAngle);
+        //         transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        //     }
+        // }
+    }
+}

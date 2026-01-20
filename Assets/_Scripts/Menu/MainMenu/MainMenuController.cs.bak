@@ -1,0 +1,268 @@
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement; 
+using System.Collections;
+using UnityEngine.Audio;
+
+public class MainMenuController : MonoBehaviour
+{
+    [Header("Tutorial")]
+    public TutorialManager tutorialManager;
+    public GameObject gameTitle;
+
+    [Header("Scene Settings")]
+    public string gameplaySceneName = "Gameplay";
+
+    [Header("UI Panels")]
+    public GameObject mainMenuPanel;
+    public GameObject playPanel;
+    public GameObject controlsPanel;
+    public GameObject optionsPanel; 
+
+    [Header("UI Sliders")]
+    public Slider sliderMaster;
+    public Slider sliderMusic;
+    public Slider sliderSFX;
+    public Slider sliderBrightness;
+
+    [Header("UI Buttons")]
+    public Button continueButton;
+
+    [Header("Brightness Settings")]
+    public Image brightnessOverlay;
+
+    [Header("Audio Settings")]
+    public AudioMixer mainMixer;
+    public AudioSource sfxSource; 
+    public AudioClip hoverSound;  
+    public AudioClip clickSound;
+
+    private bool isSceneLoading = false;
+
+    void Start()
+    {
+        // --- LOAD SETTINGS SAAT GAME DIBUKA ---
+        
+        float volMaster = PlayerPrefs.GetFloat("MasterVol", 1f);
+        float volMusic = PlayerPrefs.GetFloat("MusicVol", 1f);
+        float volSFX = PlayerPrefs.GetFloat("SFXVol", 1f);
+
+        SetMasterVolume(volMaster); 
+        if (sliderMaster != null) sliderMaster.value = volMaster; 
+        
+        SetMusicVolume(volMusic);
+        SetSFXVolume(volSFX);
+        
+        float brightVal = PlayerPrefs.GetFloat("Brightness", 1f);
+        SetBrightness(brightVal);
+        if (sliderBrightness != null) sliderBrightness.value = brightVal;
+    }
+
+    public void PlayGame()
+    {
+       
+        LevelLoader.LoadLevel(gameplaySceneName);
+        
+    }
+
+    public void OpenPlayMenu()
+    {
+        PlayClickSFX();
+        mainMenuPanel.SetActive(false);
+        playPanel.SetActive(true);
+
+        bool hasSave = SaveManager.HasSaveFile();
+
+        // Cek Save File
+        if (continueButton != null)
+        {
+            continueButton.gameObject.SetActive(hasSave);
+        }
+    }
+
+    public void ClosePlayMenu()
+    {
+        PlayClickSFX();
+        playPanel.SetActive(false);
+        mainMenuPanel.SetActive(true);
+    }
+
+    public void ContinueGame()
+    {
+        if (SaveManager.HasSaveFile())
+        {
+            SaveData data = SaveManager.Load();
+            string targetScene = data.lastSceneName;
+
+            // Validasi nama scene (jaga-jaga kalau string kosong)
+            if (string.IsNullOrEmpty(targetScene)) targetScene = gameplaySceneName;
+
+            // Panggil loader dengan scene yang benar
+           
+                LevelLoader.LoadLevel(targetScene);
+            
+        }
+    }
+
+    public void QuitGame()
+    {
+        PlayClickSFX();
+        Debug.Log("Keluar dari Game...");
+        Invoke("ExitApplication", 0.5f);
+    }
+
+    private void ExitApplication()
+    {
+        Application.Quit();
+        #if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+        #endif
+    }
+
+    public void PlayHoverSFX()
+    {
+        if (sfxSource != null && hoverSound != null)
+        {
+            sfxSource.PlayOneShot(hoverSound);
+        }
+    }
+
+    public void PlayClickSFX()
+    {
+        if (sfxSource != null && clickSound != null)
+        {
+            sfxSource.PlayOneShot(clickSound);
+        }
+    }
+
+    IEnumerator LoadSceneWithDelay()
+    {
+        PlayClickSFX(); // Mainkan suara dulu
+
+        // Tunggu durasi suara (atau 0.5 detik jika pendek)
+        yield return new WaitForSeconds(0.5f); 
+
+        // Baru pindah scene
+        Time.timeScale = 1f;
+        LevelLoader.LoadLevel(gameplaySceneName); 
+    }
+
+    IEnumerator LoadSceneWithDelay(string sceneName)
+    {
+        PlayClickSFX();
+        yield return new WaitForSeconds(0.5f); 
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(sceneName);
+    }
+
+    public void OpenOptions()
+    {
+        PlayClickSFX();
+        optionsPanel.SetActive(true);
+        mainMenuPanel.SetActive(false);
+    }
+
+    public void CloseOptions()
+    {
+        PlayClickSFX();
+        optionsPanel.SetActive(false);
+        mainMenuPanel.SetActive(true);
+    }
+
+    public void OpenControls()
+    {
+        PlayClickSFX();
+        controlsPanel.SetActive(true);
+        // (Opsional) Sembunyikan panel lain jika perlu
+        if (optionsPanel != null) optionsPanel.SetActive(false); 
+    }
+
+    public void CloseControls()
+    {
+        PlayClickSFX();
+        controlsPanel.SetActive(false);
+        // Kembali ke Options (karena biasanya tombol Controls ada di dalam Options)
+        if (optionsPanel != null) optionsPanel.SetActive(true);
+    }
+
+    public void SetMasterVolume(float volume)
+    {
+        // Ubah suara
+        if (mainMixer != null) mainMixer.SetFloat("MasterVol", Mathf.Log10(volume) * 20);
+        
+        // Simpan permanen ke PlayerPrefs
+        PlayerPrefs.SetFloat("MasterVol", volume);
+        PlayerPrefs.Save();
+    }
+
+    public void SetMusicVolume(float volume)
+    {
+        if (mainMixer != null) mainMixer.SetFloat("MusicVol", Mathf.Log10(volume) * 20);
+        PlayerPrefs.SetFloat("MusicVol", volume);
+        PlayerPrefs.Save();
+    }
+
+    public void SetSFXVolume(float volume)
+    {
+        if (mainMixer != null) mainMixer.SetFloat("SFXVol", Mathf.Log10(volume) * 20);
+        PlayerPrefs.SetFloat("SFXVol", volume);
+        PlayerPrefs.Save();
+    }
+
+    public void SetBrightness(float value)
+    {
+        if (brightnessOverlay != null)
+        {
+            float alpha = 1f - value;
+            Color color = brightnessOverlay.color;
+            color.a = alpha;
+            brightnessOverlay.color = color;
+        }
+        
+        // Simpan permanen
+        PlayerPrefs.SetFloat("Brightness", value);
+        PlayerPrefs.Save();
+    }
+
+    public void NewGame()
+    {
+        PlayClickSFX();
+
+        // Reset Data Save (Sesuai logika Roguelike Anda)
+        SaveManager.DeleteSave(); 
+
+        if (PlayerDataTracker.Instance != null) 
+        {
+             Destroy(PlayerDataTracker.Instance.gameObject); 
+        }
+        if (DDAManager.Instance != null)
+        {
+             Destroy(DDAManager.Instance.gameObject);
+        }
+
+        gameTitle.SetActive(false);
+
+        // Cek apakah sudah pernah lihat tutorial? (0 = Belum, 1 = Sudah)
+        // if (PlayerPrefs.GetInt("HasSeenTutorial", 0) == 0)
+        // {
+            // Jika belum, jalankan Tutorial dulu
+            if (tutorialManager != null)
+            {
+                tutorialManager.StartTutorialSequence();
+            }
+            else
+            {
+                // Fallback jika lupa pasang tutor
+                LevelLoader.LoadLevel(gameplaySceneName);
+            }
+
+            playPanel.SetActive(false);
+        // }
+        // else
+        // {
+        //     // Jika sudah pernah, langsung main
+        //     LevelLoader.LoadLevel(gameplaySceneName);
+        // }
+        // --------------------------------
+    }
+}

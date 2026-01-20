@@ -1,0 +1,37 @@
+using UnityEngine; 
+
+namespace DungeonFlux.AI
+{
+    public class CooldownDecorator : DecoratorNode
+    {
+        private float cooldownDuration;
+        private float lastExecutionTime = -Mathf.Infinity; 
+
+        public CooldownDecorator(Node child, float cooldown) : base(child)
+        {
+            this.cooldownDuration = cooldown;
+        }
+
+        public override NodeState Execute()
+        {
+            // Cek apakah cooldown sudah selesai
+            if (Time.time >= lastExecutionTime + cooldownDuration)
+            {
+                // Jika sudah, jalankan child
+                NodeState childState = child.Execute();
+
+                // Jika child berhasil atau sedang berjalan, reset timer cooldown
+                if (childState == NodeState.SUCCESS || childState == NodeState.RUNNING)
+                {
+                    lastExecutionTime = Time.time;
+                }
+                return childState; // Kembalikan status child
+            }
+            else
+            {
+                // Jika masih cooldown, laporkan FAILURE
+                return NodeState.FAILURE;
+            }
+        }
+    }
+}

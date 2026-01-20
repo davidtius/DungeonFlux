@@ -1,0 +1,118 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &9020396074011951440
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7359401058546018155}
+  - component: {fileID: 6121319152417674649}
+  m_Layer: 0
+  m_Name: LevelGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7359401058546018155
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9020396074011951440}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.45837, y: 0.93969, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &6121319152417674649
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9020396074011951440}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 755af5e897a6f40478074266016664d0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LevelGenerator
+  possibleLoot:
+  - itemType: 0
+    itemName: Arrow
+    icon: {fileID: -7932333466873993506, guid: b8c80efb6f43f6548a8a3339b36d4bfd, type: 3}
+    bulletPrefab: {fileID: 1638316309591710549, guid: 36e966284641dd24da6b16eb00f056eb, type: 3}
+    fireRate: 2.5
+    skillEffect: 0
+  - itemType: 0
+    itemName: Fireball
+    icon: {fileID: -663767524, guid: b8c80efb6f43f6548a8a3339b36d4bfd, type: 3}
+    bulletPrefab: {fileID: 1638316309591710549, guid: 145369f8d1161fc40a62f129eb47ecb8, type: 3}
+    fireRate: 1.25
+    skillEffect: 0
+  - itemType: 0
+    itemName: Iceball
+    icon: {fileID: -359338587, guid: b8c80efb6f43f6548a8a3339b36d4bfd, type: 3}
+    bulletPrefab: {fileID: 1638316309591710549, guid: 5aa5fe006e1a68f4480691179a771ea2, type: 3}
+    fireRate: 1.75
+    skillEffect: 0
+  - itemType: 1
+    itemName: Damage2x
+    icon: {fileID: 21300000, guid: 044d467fedff7b64e99791871094d53c, type: 3}
+    bulletPrefab: {fileID: 0}
+    fireRate: 0
+    skillEffect: 2
+  - itemType: 1
+    itemName: Speed2x
+    icon: {fileID: 21300000, guid: 5e7b86598ed41904a840b43887fd228e, type: 3}
+    bulletPrefab: {fileID: 0}
+    fireRate: 0
+    skillEffect: 3
+  - itemType: 1
+    itemName: Bomb
+    icon: {fileID: 21300000, guid: 92cbee7cb5070644ebb2d3c7ab939253, type: 3}
+    bulletPrefab: {fileID: 0}
+    fireRate: 0
+    skillEffect: 1
+  playerPrefab: {fileID: 4143653025046328738, guid: d2a442965c1abf640b74c0de38229443, type: 3}
+  enemyPrefabs:
+  - {fileID: 7567290087240997859, guid: 0be52a02b93290443ac95b6cf96b08f6, type: 3}
+  - {fileID: 7567290087240997859, guid: 1d923851d4839e142b37808f0241cf1a, type: 3}
+  - {fileID: 7567290087240997859, guid: 1b33f5b879ac75840aaf5942f127b5c9, type: 3}
+  floorTilemap: {fileID: 0}
+  wallTilemap: {fileID: 0}
+  cameraBoundsCollider: {fileID: 0}
+  cinemachineConfiner: {fileID: 0}
+  biomeThemes: []
+  mapWidth: 100
+  mapHeight: 100
+  minLeafSize: 15
+  maxLeafSize: 25
+  corridorSize: 2
+  pcgProfiles: []
+  enemiesPerRoom: 3
+  floorPerBiome: 5
+  bossPrefabs:
+  - {fileID: 662291628337906135, guid: 5ba24ef66e2f91d4795d8a8d7aa9e4fe, type: 3}
+  - {fileID: 1019831400529427442, guid: b88faee9165776d4f8db031f5e8ffac2, type: 3}
+  - {fileID: 2872185625253298202, guid: 88f5a32f1aaa45347b9b1b5bd3d713c5, type: 3}
+  restStopChance: 0.15
+  combatRoomChance: 0.2
+  secretRoomChance: 0.1
+  trapRoomChance: 0.25
+  shrinePrefab: {fileID: 8045167128424325923, guid: 343809a81cc08134a95a8e274319e2cb, type: 3}
+  treasureChestPrefab: {fileID: 72654793094806016, guid: c18dfc504b368844ebe1b49e78dcbd85, type: 3}
+  trapPrefab: {fileID: 1174654795974407634, guid: 7e96a12ac0a804a46ab00310bb81d886, type: 3}
+  destructibleWallPrefab: {fileID: 3017946618420654210, guid: 1d2b9768281937e43b6b98dad39ba3ac, type: 3}
+  lockingWallPrefab: {fileID: 5348020551035489359, guid: 3e08efff9539e4c45bcbed92700fd140, type: 3}
+  lockingRoomTriggerPrefab: {fileID: 1552336921775495162, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+  exitPortalPrefab: {fileID: 3883727702621099701, guid: 9f4089eed68d4514b877544196af0d30, type: 3}
+  sanctuaryPortalPrefab: {fileID: 0}
+  levelFader: {fileID: 0}

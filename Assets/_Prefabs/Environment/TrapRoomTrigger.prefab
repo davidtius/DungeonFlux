@@ -1,0 +1,84 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &416077622328795688
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 730679222962190570, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1552336921775495162, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      propertyPath: m_Name
+      value: TrapRoomTrigger
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1552336921775495162, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 4860170803037996732}
+  m_SourcePrefab: {fileID: 100100000, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+--- !u!1 &1174654795974407634 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1552336921775495162, guid: 99a095deecf3d9241941a4a1e0a63727, type: 3}
+  m_PrefabInstance: {fileID: 416077622328795688}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &4860170803037996732
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1174654795974407634}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 52c4a9a9cd099c94f933587f07dc2a69, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: NewAssembly::TrapRoomController
+  trapType: 1
+  poisonDamage: 1
+  damageInterval: 1.5
+  timeLimit: 30
+  timerText: {fileID: 0}

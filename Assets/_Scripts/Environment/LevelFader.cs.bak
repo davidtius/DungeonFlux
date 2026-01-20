@@ -1,0 +1,43 @@
+using UnityEngine;
+using System.Collections;
+
+public class LevelFader : MonoBehaviour
+{
+    public CanvasGroup fadeCanvasGroup; 
+    public float fadeDuration = 0.5f;
+
+    private void Start()
+    {
+        if (fadeCanvasGroup != null)
+        {
+            fadeCanvasGroup.alpha = 1f; // Pastikan gelap dulu
+            StartCoroutine(FadeIn());
+        }
+    }
+
+    public IEnumerator FadeOut()
+    {
+        fadeCanvasGroup.blocksRaycasts = true; // Blokir input pemain saat transisi
+        float timer = 0f;
+        while (timer < fadeDuration)
+        {
+            timer += Time.deltaTime;
+            fadeCanvasGroup.alpha = Mathf.Lerp(0f, 1f, timer / fadeDuration);
+            yield return null;
+        }
+        fadeCanvasGroup.alpha = 1f;
+    }
+
+    public IEnumerator FadeIn()
+    {
+        float timer = 0f;
+        while (timer < fadeDuration)
+        {
+            timer += Time.deltaTime;
+            fadeCanvasGroup.alpha = Mathf.Lerp(1f, 0f, timer / fadeDuration);
+            yield return null;
+        }
+        fadeCanvasGroup.alpha = 0f;
+        fadeCanvasGroup.blocksRaycasts = false; // Izinkan input lagi
+    }
+}

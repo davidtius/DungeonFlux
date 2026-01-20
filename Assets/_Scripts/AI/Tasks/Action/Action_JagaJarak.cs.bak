@@ -1,0 +1,83 @@
+using UnityEngine;
+using DungeonFlux.AI;
+
+namespace DungeonFlux.Tasks
+{
+    public class Action_JagaJarak : MonoBehaviour
+    {
+        [Header("Kite Logic")]
+        public string playerTag = "Player";
+        public float optimalRange = 5f;
+        public float tooCloseRange = 2f;
+        public float speed = 3f;
+
+        [Header("Rotation")]
+        public float rotationSpeed = 5f;
+
+        private Transform playerTransform;
+        private Animator animator;
+        private Health myHealth;
+
+        void Start()
+        {
+            myHealth = GetComponent<Health>();
+            GameObject playerObj = GameObject.FindGameObjectWithTag(playerTag);
+            if (playerObj != null)
+            {
+                playerTransform = playerObj.transform;
+            }
+            animator = GetComponent<Animator>();
+        }
+
+        public NodeState ExecuteTask()
+        {
+            if (playerTransform == null)
+            {
+                animator.SetFloat("moveX", 0); 
+                animator.SetFloat("moveY", 0);
+                return NodeState.FAILURE;
+            }
+
+            float currentSpeed = speed;
+            if (myHealth != null) currentSpeed *= myHealth.speedMultiplier;
+
+            float distance = Vector2.Distance(transform.position, playerTransform.position);
+            Vector2 directionToPlayer = (playerTransform.position - transform.position).normalized;
+
+            animator.SetFloat("moveX", directionToPlayer.x);
+            animator.SetFloat("moveY", directionToPlayer.y);
+    
+            // Logika Rotasi
+            // Vector2 directionToPlayer = (playerTransform.position - transform.position).normalized;
+            // if (directionToPlayer != Vector2.zero) // Hindari error jika posisi sama
+            // {
+            //     // Hitung sudut target (dalam derajat)
+            //     float targetAngle = Mathf.Atan2(directionToPlayer.y, directionToPlayer.x) * Mathf.Rad2Deg - 90f; // Kurangi 90 jika sprite hadap atas
+            //     // Rotasi perlahan ke arah target
+            //     Quaternion targetRotation = Quaternion.Euler(0f, 0f, targetAngle);
+            //     transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            // }
+
+            if (distance < tooCloseRange)
+            {
+                // Terlalu dekat, mundur
+                Vector2 fleeDirection = (transform.position - playerTransform.position).normalized;
+                transform.position = Vector2.MoveTowards(transform.position, transform.position + (Vector3)fleeDirection, currentSpeed * Time.deltaTime);
+                return NodeState.RUNNING; // Masih menyesuaikan posisi
+            }
+            else if (distance > optimalRange)
+            {
+                // Terlalu jauh, maju
+                transform.position = Vector2.MoveTowards(transform.position, playerTransform.position, currentSpeed * Time.deltaTime);
+                return NodeState.RUNNING; // Masih menyesuaikan posisi
+            }
+            else
+            {
+                animator.SetFloat("moveX", directionToPlayer.x);
+                animator.SetFloat("moveY", directionToPlayer.y);
+                // Jarak ideal tercapai
+                return NodeState.SUCCESS; // Lapor SUKSES agar BT bisa lanjut ke aksi berikutnya (Menembak/Skill)
+            }
+        }
+    }
+}

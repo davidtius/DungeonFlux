@@ -1,0 +1,80 @@
+using UnityEngine;
+using DungeonFlux.AI;
+
+namespace DungeonFlux.Tasks
+{
+    [RequireComponent(typeof(Condition_IsPlayerInMeleeRange))]
+    public class Action_AttackMelee : MonoBehaviour
+    {
+        public AudioClip attackSound;
+        private AudioSource audioSource;
+
+        [Header("Melee Attack Settings")]
+        public float attackCooldown = 1.0f; 
+        public int meleeDamage = 5; 
+        // public string attackAnimationTrigger = "Attack"; // Opsional: nama trigger animasi
+
+        private float lastAttackTime = -Mathf.Infinity;
+        private Condition_IsPlayerInMeleeRange meleeRangeCheck;
+        // private Animator animator; // Opsional
+
+        void Start()
+        {
+            meleeRangeCheck = GetComponent<Condition_IsPlayerInMeleeRange>();
+            audioSource = GetComponent<AudioSource>();
+        if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        public NodeState ExecuteTask()
+        {
+            // Cek pemain dalam jangkauan melee
+            if (meleeRangeCheck.Check() != NodeState.SUCCESS)
+            {
+                return NodeState.FAILURE;
+            }
+
+            // Cek cooldown serangan melee
+            if (Time.time >= lastAttackTime + attackCooldown)
+            {
+                if (attackSound) audioSource.PlayOneShot(attackSound);
+                
+                lastAttackTime = Time.time;
+
+                Debug.Log($"[{gameObject.name}] Melakukan Serangan Melee!");
+
+                // Cara 1: Damage langsung saat menyentuh (jika ada EnemyDamage.cs)
+                // Tidak perlu kode di sini jika EnemyDamage.cs sudah otomatis memberi damage
+
+                // Cara 2: Damage area kecil di depan musuh
+                PerformMeleeDamage();
+
+                // Cara 3: Mainkan animasi (opsional)
+                // if (animator != null)
+                // {
+                //     animator.SetTrigger(attackAnimationTrigger);
+                // }
+                // --- Akhir Logika Serangan Melee ---
+
+                return NodeState.SUCCESS; 
+            }
+            else
+            {
+                // Jika masih cooldown, task ini dianggap masih berjalan (menunggu)
+                return NodeState.RUNNING;
+            }
+        }
+
+        // Fungsi helper untuk Cara 2 (Damage area kecil)
+        private void PerformMeleeDamage()
+        {
+            if (meleeRangeCheck.playerTransform != null) 
+            {
+                Health playerHealth = meleeRangeCheck.playerTransform.GetComponent<Health>();
+                if (playerHealth != null)
+                {
+                    playerHealth.TakeDamage(meleeDamage);
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,41 @@
+using UnityEngine;
+
+public class EnemyAI : MonoBehaviour
+{
+    public float speed = 3f;
+    public float sightRange = 10f; 
+
+    private Transform player;
+    private Rigidbody2D rb;
+
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        player = GameObject.FindGameObjectWithTag("Player").transform;
+    }
+
+    void FixedUpdate()
+    {
+        if (player != null)
+        {
+            float distanceToPlayer = Vector2.Distance(transform.position, player.position);
+
+            // HANYA jika pemain berada dalam jangkauan pandang, lakukan aksi
+            if (distanceToPlayer <= sightRange)
+            {
+                // Hitung arah dari musuh ke pemain
+                Vector2 direction = (player.position - transform.position).normalized;
+                // Gerakkan ke arah tersebut
+                rb.linearVelocity = direction * speed;
+                // hadap ke pemain
+                float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
+                rb.rotation = angle;
+            }
+            else
+            {
+                // Jika pemain di luar jangkauan, berhenti bergerak
+                rb.linearVelocity = Vector2.zero;
+            }
+        }
+    }
+}

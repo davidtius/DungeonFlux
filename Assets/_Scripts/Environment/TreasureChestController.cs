@@ -1,0 +1,117 @@
+using UnityEngine;
+
+public class TreasureChest : MonoBehaviour
+{
+    [Header("Settings")]
+    public Sprite openSprite;
+    public Sprite closedSprite;
+    [HideInInspector]
+    public bool isObjectiveChest = false;
+    [HideInInspector]
+    public PlayerController.LootData contentLoot;
+
+    [Header("Visuals")]
+    public SpriteRenderer chestRenderer;
+    public SpriteRenderer itemIconRenderer;
+    public GameObject interactionPrompt;
+
+    private bool isOpen = false;
+
+    void Start()
+    {
+        if (chestRenderer != null) chestRenderer.sprite = closedSprite;
+        if (itemIconRenderer != null) itemIconRenderer.gameObject.SetActive(false);
+    }
+
+    public void Interact(PlayerController player)
+    {
+        if (!isOpen)
+        {
+            OpenChest();
+        }
+        else
+        {
+
+            if (!isObjectiveChest && player != null && contentLoot != null)
+            {
+                PlayerController.LootData swappedOutWeapon = player.PickupLoot(contentLoot);
+
+                if (swappedOutWeapon != null)
+                {
+                    contentLoot = swappedOutWeapon;
+                    if (itemIconRenderer != null) itemIconRenderer.sprite = contentLoot.icon;
+                }
+                else
+                {
+                    contentLoot = null;
+                    if (itemIconRenderer != null) itemIconRenderer.gameObject.SetActive(false);
+                    Debug.Log("Peti sekarang kosong.");
+                }
+            }
+        }
+    }
+
+    void OpenChest()
+    {
+        isOpen = true;
+        chestRenderer.sprite = openSprite;
+
+        if (isObjectiveChest)
+        {
+            if (LevelGenerator.Instance != null)
+            {
+                LevelGenerator.Instance.MarkObjectiveComplete();
+            }
+
+            if (GameHUDManager.Instance != null)
+            {
+                GameHUDManager.Instance.ShowNotification("Key Obtained!\nExit Unlocked!", Color.yellow, 72f);
+            }
+
+            PlayerDataTracker.Instance.SetObjectiveComplete();
+        }
+        else
+        {
+            if (PlayerDataTracker.Instance != null) PlayerDataTracker.Instance.RecordLootFound();
+
+            if (contentLoot != null && itemIconRenderer != null)
+            {
+                itemIconRenderer.sprite = contentLoot.icon;
+                itemIconRenderer.gameObject.SetActive(true);
+            }
+        }
+    }
+
+    public void SetContent(PlayerController.LootData data)
+    {
+        contentLoot = data;
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            PlayerController pc = other.GetComponent<PlayerController>();
+            if (pc != null)
+            {
+                pc.SetCurrentChest(this);
+            }
+
+            if (interactionPrompt != null && !isOpen) interactionPrompt.SetActive(true);
+        }
+    }
+
+    void OnTriggerExit2D(Collider2D other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            PlayerController pc = other.GetComponent<PlayerController>();
+            if (pc != null)
+            {
+                pc.SetCurrentChest(null);
+            }
+
+            if (interactionPrompt != null) interactionPrompt.SetActive(false);
+        }
+    }
+}

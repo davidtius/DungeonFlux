@@ -1,0 +1,22 @@
+namespace DungeonFlux.AI
+{
+    public class InverterDecorator : DecoratorNode
+    {
+        public InverterDecorator(Node child) : base(child) { }
+
+        public override NodeState Execute()
+        {
+            switch (child.Execute())
+            {
+                case NodeState.RUNNING:
+                    return NodeState.RUNNING; // RUNNING tetap RUNNING
+                case NodeState.SUCCESS:
+                    return NodeState.FAILURE; // SUCCESS -> FAILURE
+                case NodeState.FAILURE:
+                    return NodeState.SUCCESS; // FAILURE -> SUCCESS
+            }
+            // Default 
+            return NodeState.FAILURE;
+        }
+    }
+}

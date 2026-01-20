@@ -1,0 +1,69 @@
+using UnityEngine;
+using DungeonFlux.AI; 
+
+namespace DungeonFlux.Tasks
+{
+    public class Action_Chase : MonoBehaviour
+    {
+        [Header("Chase Logic")]
+        public string playerTag = "Player";
+        public float chaseSpeed = 4f;
+        
+        [Header("Rotation")]
+        public float rotationSpeed = 5f;
+
+        private Transform playerTransform;
+        private Animator animator;
+        private Health myHealth;
+
+        void Start()
+        {
+            myHealth = GetComponent<Health>();
+            // Mencari player sekali saja saat Start
+            GameObject playerObj = GameObject.FindGameObjectWithTag(playerTag);
+            if (playerObj != null)
+            {
+                playerTransform = playerObj.transform;
+            }
+            animator = GetComponent<Animator>();
+        }
+
+        public NodeState ExecuteTask()
+        {
+            Debug.Log("Chasing...");
+            if (playerTransform == null)
+            {
+                // Jika player mati atau hilang, task ini gagal
+                Debug.Log("Player Hilang.");
+                animator.SetFloat("moveX", 0);
+                animator.SetFloat("moveY", 0);
+                return NodeState.FAILURE;
+            }
+
+            // Logika mengejar
+            float currentSpeed = chaseSpeed;
+            if (myHealth != null) currentSpeed *= myHealth.speedMultiplier;
+
+            Vector2 direction = (playerTransform.position - transform.position).normalized;
+            transform.position = Vector2.MoveTowards(transform.position, playerTransform.position, currentSpeed * Time.deltaTime);
+
+            animator.SetFloat("moveX", direction.x); 
+            animator.SetFloat("moveY", direction.y);
+
+            // // Logika Rotasi
+            // Vector2 directionToPlayer = (playerTransform.position - transform.position).normalized;
+            // if (directionToPlayer != Vector2.zero) // Hindari error jika posisi sama
+            // {
+            //     // Hitung sudut target (dalam derajat)
+            //     float targetAngle = Mathf.Atan2(directionToPlayer.y, directionToPlayer.x) * Mathf.Rad2Deg - 90f; // Kurangi 90 jika sprite hadap atas
+            //     // Rotasi perlahan ke arah target
+            //     Quaternion targetRotation = Quaternion.Euler(0f, 0f, targetAngle);
+            //     transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            // }
+            
+            // Tugas mengejar tidak pernah "selesai",
+            // ia akan terus berjalan sampai BT pindah ke state lain
+            return NodeState.RUNNING;
+        }
+    }
+}

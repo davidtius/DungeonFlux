@@ -1,0 +1,45 @@
+using UnityEngine;
+using DungeonFlux.AI;
+using System.Diagnostics;
+
+namespace DungeonFlux.Tasks
+{
+    public class Condition_IsPlayerInMeleeRange : MonoBehaviour
+    {
+        [Header("Melee Range Check")]
+        public float meleeRange = 1.5f; 
+        public string playerTag = "Player";
+        [HideInInspector] public Transform playerTransform;
+
+        void Start()
+        {
+            // Cari player sekali saja
+            GameObject playerObj = GameObject.FindGameObjectWithTag(playerTag);
+            if (playerObj != null)
+            {
+                playerTransform = playerObj.transform;
+            }
+        }
+
+        public NodeState Check()
+        {
+            if (playerTransform == null)
+            {
+                UnityEngine.Debug.Log("Cek Melee Range Gagal.");
+                return NodeState.FAILURE; // Tidak ada player, anggap tidak dalam jangkauan
+            }
+
+            UnityEngine.Debug.Log("Cek Melee Range.");
+
+            // Cek jarak
+            if (Vector2.Distance(transform.position, playerTransform.position) <= meleeRange)
+            {
+                return NodeState.SUCCESS; // Player DALAM jangkauan melee
+            }
+            else
+            {
+                return NodeState.FAILURE; // Player di LUAR jangkauan melee
+            }
+        }
+    }
+}

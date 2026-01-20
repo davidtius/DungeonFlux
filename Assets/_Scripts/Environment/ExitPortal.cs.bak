@@ -1,0 +1,72 @@
+using UnityEngine;
+
+public class ExitPortal : MonoBehaviour
+{
+    public string playerTag = "Player";
+
+    [Header("Visual Settings")]
+    public Color lockedColor = new Color(0.3f, 0.3f, 0.3f, 1f); // Abu-abu gelap
+    public Color unlockedColor = Color.white; // Warna asli sprite
+
+    private bool triggered = false;
+    private bool isLocked = true;
+    private SpriteRenderer spriteRenderer;
+
+    void Awake()
+    {
+        spriteRenderer = GetComponent<SpriteRenderer>();
+    }
+
+    void Start()
+    {
+        // Default: Kunci dulu saat spawn
+        LockPortal();
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        // Jika masih terkunci, tolak interaksi
+        if (isLocked) 
+        {
+            if (other.CompareTag(playerTag))
+            {
+                // (Opsional) Tampilkan pesan "Objective Not Complete" di HUD
+                if (GameHUDManager.Instance != null)
+                    GameHUDManager.Instance.ShowNotification("LOCKED\nFind Treasure First!", Color.red, 40f);
+            }
+            return;
+        }
+        
+        if (!triggered && other.CompareTag(playerTag))
+        {
+            // Cari LevelGenerator via Singleton
+            if (LevelGenerator.Instance != null)
+            {
+                 // Panggil GoToNextFloor HANYA jika Instance ditemukan
+                 triggered = true; 
+                Debug.Log("Pemain mencapai Pintu Keluar.");
+                 DDAManager.Instance.AnalyzeAndPrepareNextFloor();
+                 LevelGenerator.Instance.GoToNextFloor();
+            }
+            else
+            {
+                Debug.LogError("LevelGenerator Instance tidak ditemukan oleh ExitPortal.");
+            }
+        }
+    }
+
+    public void LockPortal()
+    {
+        isLocked = true;
+        if (spriteRenderer != null) spriteRenderer.color = lockedColor;
+    }
+
+    public void UnlockPortal()
+    {
+        isLocked = false;
+        if (spriteRenderer != null) spriteRenderer.color = unlockedColor;
+        
+        // (Opsional) Mainkan suara "Portal Open" di sini
+        Debug.Log("PORTAL TERBUKA!");
+    }
+}

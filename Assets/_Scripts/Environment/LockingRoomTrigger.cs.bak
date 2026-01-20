@@ -1,0 +1,182 @@
+using UnityEngine;
+using UnityEngine.Tilemaps;
+using System.Collections.Generic;
+
+[RequireComponent(typeof(BoxCollider2D))]
+public class LockingRoomTrigger : MonoBehaviour
+{
+    [Header("Music Trigger")]
+    public AudioClip overrideMusic;
+    
+    [Header("Lighting")]
+    public GameObject roomLightObject;
+
+    // Variabel yang diisi oleh LevelGenerator
+    [HideInInspector] public RectInt roomBounds; //
+    [HideInInspector] public GameObject doorPrefab; // Prefab 'LockingWall' kita
+
+    // Variabel Internal
+    private List<Vector3Int> doorPositions = new List<Vector3Int>();
+    private List<GameObject> enemiesInRoom = new List<GameObject>();
+    private List<GameObject> spawnedDoors = new List<GameObject>(); // Untuk menyimpan prefab dinding
+    private bool roomIsLocked = false;
+    private bool roomIsCleared = false;
+    private bool hasBeenVisited = false;
+
+    public bool IsLocked => roomIsLocked;
+    public bool IsCleared => roomIsCleared;
+    
+    private LevelGenerator levelGen;
+
+    void Start()
+    {
+        levelGen = LevelGenerator.Instance;
+        if (levelGen == null)
+        {
+            Debug.LogError("LockingRoomTrigger tidak bisa menemukan LevelGenerator!");
+            Destroy(gameObject);
+            return;
+        }
+
+        FindMyOwnDoors();
+
+        StartCoroutine(DelayedEnemyScan());
+    }
+    
+    private System.Collections.IEnumerator DelayedEnemyScan()
+    {
+        // Tunggu 1 frame agar physics engine bisa mendaftarkan collider bos
+        yield return null; 
+
+        // Baru jalankan FindMyEnemies
+        FindMyEnemies();
+    }
+
+    void FindMyOwnDoors()
+    {
+        for (int x = roomBounds.xMin; x <= roomBounds.xMax; x++)
+        {
+            for (int y = roomBounds.yMin; y <= roomBounds.yMax; y++)
+            {
+                if (x == roomBounds.xMin || x == roomBounds.xMax || y == roomBounds.yMin || y == roomBounds.yMax)
+                {
+                    Vector2Int wallPos = new Vector2Int(x, y);
+                    Vector2Int[] neighbors = { 
+                        wallPos + Vector2Int.up, wallPos + Vector2Int.down, 
+                        wallPos + Vector2Int.left, wallPos + Vector2Int.right 
+                    };
+
+                    foreach (Vector2Int neighborPos in neighbors)
+                    {
+                        if (neighborPos.x < 0 || neighborPos.x >= levelGen.mapWidth || neighborPos.y < 0 || neighborPos.y >= levelGen.mapHeight) continue;
+
+                        if (levelGen.mapGrid[neighborPos.x, neighborPos.y] == 1 && levelGen.FindOwnerRoom(neighborPos) != roomBounds)
+                        {
+                            Vector3Int doorPos = new Vector3Int(neighborPos.x, neighborPos.y, 0);
+                            
+                            if (!doorPositions.Contains(doorPos))
+                            {
+                                doorPositions.Add(doorPos);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void FindMyEnemies()
+    {
+        enemiesInRoom.Clear();
+
+        Collider2D[] allColliders = Physics2D.OverlapBoxAll(transform.position, roomBounds.size, 0);
+        foreach (Collider2D col in allColliders)
+        {
+            Health health = col.GetComponent<Health>();  
+            if (health != null && (health.characterType == Health.CharacterType.Enemy || health.characterType == Health.CharacterType.Boss))
+            {
+                enemiesInRoom.Add(col.gameObject);
+            }
+        }
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Player") && !roomIsLocked && !roomIsCleared)
+        {
+            Vector2 roomCenter = new Vector2(roomBounds.center.x, roomBounds.center.y);
+            
+            Vector2 pushDirection = (roomCenter - (Vector2)other.transform.position).normalized;
+
+            other.transform.position = (Vector2)other.transform.position + (pushDirection * 2.0f);
+            
+            roomIsLocked = true;
+            Debug.Log("<color=orange>Pemain memasuki Ruangan. MENGUNCI PINTU.</color>");
+            SetDoors(true); // true = Instantiate
+
+            if (!hasBeenVisited)
+            {
+                hasBeenVisited = true;
+                if (PlayerDataTracker.Instance != null) PlayerDataTracker.Instance.RecordRoomVisited();
+            }
+
+            if (roomLightObject != null) roomLightObject.SetActive(true);
+
+            if (overrideMusic != null && MusicManager.Instance != null)
+            {
+                Debug.Log("Masuk Boss Room: Ganti ke Musik Boss!");
+                MusicManager.Instance.PlayMusic(overrideMusic);
+            }
+        }
+    }
+
+    void Update()
+    {
+        if (roomIsLocked && !roomIsCleared)
+        {
+            for (int i = enemiesInRoom.Count - 1; i >= 0; i--)
+            {
+                if (enemiesInRoom[i] == null)
+                {
+                    enemiesInRoom.RemoveAt(i);
+                }
+            }
+
+            if (enemiesInRoom.Count == 0)
+            {
+                roomIsCleared = true;
+                roomIsLocked = false;
+                Debug.Log("<color=green>RUANGAN BERSIH! MEMBUKA PINTU.</color>");
+                SetDoors(false); // false = Destroy
+                if (roomLightObject != null) roomLightObject.SetActive(false);
+                Destroy(gameObject, 1f); 
+            }
+        }
+    }
+
+    private void SetDoors(bool lockDoors)
+    {
+        if (lockDoors)
+        {
+            // 1. INSTANTIATE Dinding
+            if (doorPrefab == null) return;
+            
+            foreach (Vector3Int doorPos in doorPositions)
+            {
+                // Spawn di tengah tile
+                Vector3 spawnPos = doorPos + new Vector3(0.5f, 0.5f, 0); 
+                GameObject wall = Instantiate(doorPrefab, spawnPos, Quaternion.identity);
+                spawnedDoors.Add(wall); // Simpan referensi
+            }
+        }
+        else
+        {
+            // 2. DESTROY Dinding
+            foreach (GameObject wall in spawnedDoors)
+            {
+                Destroy(wall);
+            }
+            spawnedDoors.Clear();
+        }
+    }
+}

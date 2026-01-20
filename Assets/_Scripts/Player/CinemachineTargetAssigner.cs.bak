@@ -1,0 +1,44 @@
+using UnityEngine;
+using Unity.Cinemachine; // <-- Jangan lupa tambahkan ini
+
+// Tempelkan skrip ini pada GameObject 'Cinemachine Camera' Anda
+[RequireComponent(typeof(CinemachineCamera))]
+public class CinemachineTargetAssigner : MonoBehaviour
+{
+    // Tag yang digunakan oleh prefab Player Anda
+    public string playerTag = "Player"; //
+
+    private CinemachineCamera virtualCamera;
+    private bool targetAssigned = false;
+
+    void Awake()
+    {
+        // Ambil referensi ke kamera yang menempel di GameObject ini
+        virtualCamera = GetComponent<CinemachineCamera>();
+    }
+
+    // Kita gunakan LateUpdate untuk semua hal yang berhubungan dengan kamera.
+    // Ini berjalan SETELAH semua Update() selesai, 
+    // jadi kita yakin Player sudah di-spawn oleh LevelGenerator.
+    void LateUpdate()
+    {
+        // Jika target sudah ditemukan, hentikan pencarian.
+        if (targetAssigned) return;
+
+        // Jika target masih kosong (null)
+        if (virtualCamera.Follow == null)
+        {
+            // Cari GameObject Player menggunakan tag
+            GameObject player = GameObject.FindGameObjectWithTag(playerTag);
+
+            if (player != null)
+            {
+                // Target ditemukan!
+                Debug.Log("Cinemachine: Target Player ditemukan, mengunci kamera.");
+                virtualCamera.Follow = player.transform;
+                virtualCamera.OnTargetObjectWarped(player.transform, player.transform.position - virtualCamera.transform.position);
+                targetAssigned = true;
+            }
+        }
+    }
+}

@@ -1,0 +1,57 @@
+using UnityEngine;
+using DungeonFlux.AI;
+using System.Collections;
+
+namespace DungeonFlux.Tasks
+{
+    public class Action_Evade : MonoBehaviour
+    {
+        [Header("Evade Logic")]
+        public float evadeDuration = 0.3f;
+        public float evadeSpeed = 7f;
+        
+        private bool isEvading = false;
+        private Health myHealth;
+
+        void Start()
+        {
+            myHealth = GetComponent<Health>();
+        }
+
+        public NodeState ExecuteTask()
+        {
+            if (isEvading)
+            {
+                return NodeState.RUNNING; // Sedang menghindar
+            }
+            else
+            {
+                StartCoroutine(EvadeCoroutine());
+                return NodeState.RUNNING; // Baru mulai menghindar
+            }
+        }
+
+        private IEnumerator EvadeCoroutine()
+        {
+            isEvading = true;
+            
+            // Pilih arah menghindar acak (kiri atau kanan relatif)
+            float currentSpeed = evadeSpeed;
+            if (myHealth != null) currentSpeed *= myHealth.speedMultiplier;
+            Vector2 evadeDirection = (Random.value > 0.5f) ? transform.right : -transform.right;
+            
+            float timer = 0f;
+            while (timer < evadeDuration)
+            {
+                transform.position += (Vector3)evadeDirection * currentSpeed * Time.deltaTime;
+                timer += Time.deltaTime;
+                yield return null;
+            }
+            
+            isEvading = false;
+            // Note: Task ini tidak akan pernah return SUCCESS secara teknis
+            // karena Coroutine. Ia akan selalu RUNNING atau diinterupsi
+            // oleh BT di frame berikutnya. Ini perilaku yg wajar untuk Evade.
+        }
+    }
+}
