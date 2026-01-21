@@ -15,7 +15,6 @@ using System.Collections.Generic;
 [RequireComponent(typeof(Action_Evade))]
 [RequireComponent(typeof(Action_UseSkill))]
 [RequireComponent(typeof(Action_AttackMelee))]
-[RequireComponent(typeof(Action_Teleport))]
 
 public class BehaviourTreeRunner : MonoBehaviour
 {
@@ -34,7 +33,6 @@ public class BehaviourTreeRunner : MonoBehaviour
     private Action_Evade task_Evade;
     private Action_UseSkill task_UseSkill;
     private Action_AttackMelee task_AttackMelee;
-    private Action_Teleport task_Teleport;
 
     [Header("BT Tactic Settings")]
 
@@ -62,7 +60,6 @@ public class BehaviourTreeRunner : MonoBehaviour
         task_Evade = GetComponent<Action_Evade>();
         task_UseSkill = GetComponent<Action_UseSkill>();
         task_AttackMelee = GetComponent<Action_AttackMelee>();
-        task_Teleport = GetComponent<Action_Teleport>();
         BuildBehaviorTree();
     }
 
@@ -76,30 +73,6 @@ public class BehaviourTreeRunner : MonoBehaviour
 
     private void BuildBehaviorTree()
     {
-
-        // --- LOGIKA RANGED (REVISI) ---
-        Sequence tactic_Aggressive_Ranged = new Sequence(new List<Node>
-        {
-            // 1. Pastikan Tipe Ranged
-            new ActionNode(() => (health.enemyVariant == Health.EnemyVariant.Ranged) ? NodeState.SUCCESS : NodeState.FAILURE),
-
-            new Selector(new List<Node>
-            {
-                // --- TAMBAHAN BARU: TELEPORT ---
-                // Taruh paling atas agar dicek duluan setiap frame
-                new ActionNode(task_Teleport.ExecuteTask), 
-
-                // 2. Skill / Nembak (Logika Lama)
-                new Sequence(new List<Node>
-                {
-                        new CooldownDecorator(new ActionNode(task_UseSkill.ExecuteTask), 2.0f)
-                }),
-                
-                // 3. Jaga Jarak / Kiting (Logika Lama)
-                new ActionNode(task_JagaJarak.ExecuteTask)
-            })
-        });
-
         Node tactic_Aggressive_Tank = new Selector(new List<Node>
         {
 
@@ -172,7 +145,7 @@ public class BehaviourTreeRunner : MonoBehaviour
             )
         });
 
-        List<Node> battleTactics = new List<Node> { tactic_Aggressive_Ranged, tactic_Aggressive_Ranged, tactic_Aggressive_Ranged, tactic_Aggressive_Ranged};
+        List<Node> battleTactics = new List<Node> { tactic_Aggressive, tactic_JagaJarak, tactic_SkillOriented, tactic_Evading};
         List<string> tacticNames = new List<string> { "Aggressive", "JagaJarak", "SkillOriented", "Evading" };
         utilitySelector_BattleTactics = new UtilitySelector(battleTactics, tacticNames, baseUtilities);
 

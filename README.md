@@ -40,7 +40,7 @@ Map complexity maximizes with **branching paths and hidden rooms**, rewarding cu
 
 ## How to Run:
 **Option 1: Play Build**
-1.  Download & extract `DungeonFlux_v1.0.zip`.
+1.  Download & extract `DungeonFlux_v1.1.zip`.
 2.  Open `DungeonFlux.exe`.
 
 **Option 2: Open Source Code**
